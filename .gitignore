@@ -5,3 +5,10 @@
 /*.xml
 .DS_Store
 Thumbs.db
+# 各子项目的本地与构建产物
+VideoQuiz/local.properties
+VideoQuiz/.gradle/
+VideoQuiz/build/
+VideoQuiz/app/build/
+
+/repos.json

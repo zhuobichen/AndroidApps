@@ -5,6 +5,7 @@
 | App | 说明 | 技术栈 |
 |---|---|---|
 | [MapMate](MapMate/) | 会说话的手机地图：高德地图 + DeepSeek Agent，主打骑行导航与记录 | Java · Material3 · 高德 SDK 10.0 · DeepSeek API |
+| [VideoQuiz](VideoQuiz/) | 把试卷录像转成题目 + 答案的 PDF：抽帧 → 送多模态模型读题 → 解题 → 导出 | Java · Material3 · DeepSeek 多模态 API |
 
 ## 结构
 

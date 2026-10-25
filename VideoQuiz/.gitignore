@@ -1,0 +1,14 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+
+# 测试产物
+*.pdf
+*.png
+/pdf_p*.png
+/v*.xml
+/w*.xml
+/x*.xml
+/prefs*.xml
