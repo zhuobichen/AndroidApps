@@ -1,0 +1,10 @@
+import pymupdf, re
+d = pymupdf.open(r"D:\Android\MapMate\VideoQuiz\finalZ.pdf")
+txt = "\n".join(p.get_text() for p in d)
+open(r"D:\Android\MapMate\VideoQuiz\finalZ.txt","w",encoding="utf-8").write(txt)
+print("pages:", d.page_count)
+print("answers:", "参考答案" in txt)
+print("writing:", "写作题" in txt)
+print("confidence:", "识别置信度" in txt)
+ans = re.findall(r"(?m)^\s*(\d{1,2})\.\s*([A-G])\s", txt)
+print("choice answers:", len(ans))

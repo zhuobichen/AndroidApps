@@ -51,6 +51,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean busy = false;
     private int lastTotalFrames = 0;
     private int lastKeptFrames = 0;
+    private final Map<String, Integer> variantConflicts = new java.util.HashMap<>();
 
     private TextView tvVideo, tvStatus, tvResult;
     private ProgressBar progress;
@@ -133,6 +134,13 @@ public class MainActivity extends AppCompatActivity {
                 final int[] emptyRun = {0};
                 final int[] skipped = {0};
                 final Map<Integer, Question> map = new LinkedHashMap<>();
+                final java.util.Set<Integer> seen = new java.util.HashSet<>();
+                final Map<Integer, Map<String, Integer>> stemVotes = new java.util.HashMap<>();
+                final Map<Integer, Map<String, String>> stemText = new java.util.HashMap<>();
+                final Map<Integer, Map<String, Integer>> optVotes = new java.util.HashMap<>();
+                final Map<Integer, Map<String, List<String>>> optList = new java.util.HashMap<>();
+                final Map<Integer, Map<String, Integer>> stemFrame = new java.util.HashMap<>();
+                final Map<Integer, Map<Integer, List<String>>> optByFrame = new java.util.HashMap<>();
                 final float[][] lastFp = {null};
                 final int[] totalFrames = {0};
 
@@ -154,17 +162,30 @@ public class MainActivity extends AppCompatActivity {
                                 + " q=" + r.questions.size() + " passage=" + r.passage.length());
                         boolean newOne = false;
                         for (Question q : r.questions) {
-                            Question old = map.get(q.no);
-                            if (old == null) {
-                                q.firstFrame = idx;
-                                q.sharp = sharp;
-                                map.put(q.no, q);
-                                newOne = true;
-                            } else {
-                                // 题干取更长的，选项取更多的，两者合并而不是整体替换
-                                if (q.stem.length() > old.stem.length()) old.stem = q.stem;
-                                if (q.options.size() > old.options.size()) old.options = q.options;
+                            q.firstFrame = idx;
+                            q.sharp = sharp;
+                            seen.add(q.no);
+                            // 题干单独投票（空题干不参与）
+                            String ns = q.stem.replaceAll("\\s+", " ").trim();
+                            if (!ns.isEmpty()) {
+                                stemVotes.computeIfAbsent(q.no, k -> new java.util.HashMap<>())
+                                        .merge(ns, 1, Integer::sum);
+                                stemText.computeIfAbsent(q.no, k -> new java.util.HashMap<>())
+                                        .putIfAbsent(ns, q.stem);
+                                stemFrame.computeIfAbsent(q.no, k -> new java.util.HashMap<>())
+                                        .putIfAbsent(ns, idx);
                             }
+                            // 选项单独投票
+                            if (q.options.size() >= 2) {
+                                String os = String.join(";", q.options);
+                                optVotes.computeIfAbsent(q.no, k -> new java.util.HashMap<>())
+                                        .merge(os, 1, Integer::sum);
+                                optList.computeIfAbsent(q.no, k -> new java.util.HashMap<>())
+                                        .putIfAbsent(os, q.options);
+                                optByFrame.computeIfAbsent(q.no, k -> new java.util.HashMap<>())
+                                        .putIfAbsent(idx, q.options);
+                            }
+                            if (!map.containsKey(q.no)) { map.put(q.no, q); newOne = true; }
                         }
                         for (String wr : r.writings) {
                             boolean dupW = false;
@@ -196,6 +217,41 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }, (d, t) -> {});
 
+                // 按投票结果重建每道题：题干取票数最高，选项取票数最高
+                for (Integer no : seen) {
+                    Question q = map.get(no);
+                    if (q == null) continue;
+                    Map<String, Integer> sv = stemVotes.get(no);
+                    if (sv != null && !sv.isEmpty()) {
+                        String best = null; int bestV = -1;
+                        for (Map.Entry<String, Integer> e : sv.entrySet()) {
+                            if (e.getValue() > bestV) { bestV = e.getValue(); best = e.getKey(); }
+                        }
+                        q.stem = stemText.get(no).get(best);
+                    }
+                    // 选项优先取「题干所在帧」的，避免串到别的题
+                    boolean got = false;
+                    Integer f = null;
+                    if (q.stem != null) {
+                        Map<String, Integer> sf = stemFrame.get(no);
+                        if (sf != null) f = sf.get(q.stem.replaceAll("\\s+", " ").trim());
+                    }
+                    if (f != null) {
+                        Map<Integer, List<String>> of = optByFrame.get(no);
+                        if (of != null && of.get(f) != null) { q.options = of.get(f); got = true; }
+                    }
+                    if (!got) {
+                        Map<String, Integer> ov = optVotes.get(no);
+                        if (ov != null && !ov.isEmpty()) {
+                            String best = null; int bestV = -1;
+                            for (Map.Entry<String, Integer> e : ov.entrySet()) {
+                                if (e.getValue() > bestV) { bestV = e.getValue(); best = e.getKey(); }
+                            }
+                            q.options = optList.get(no).get(best);
+                        }
+                    }
+                }
+
                 // 完形选项表可能没有题干，补占位，避免 PDF 里空着
                 for (Question q : map.values()) {
                     if (q.stem.isEmpty()) q.stem = "（第 " + q.no + " 题，题干见原文）";
@@ -209,6 +265,14 @@ public class MainActivity extends AppCompatActivity {
 
                 lastTotalFrames = totalFrames[0];
                 lastKeptFrames = kept;
+
+                // 统计「同一题号出现几个不同版本」
+                variantConflicts.clear();
+                for (Map.Entry<Integer, Map<String, Integer>> e : stemVotes.entrySet()) {
+                    if (e.getValue().size() > 1) {
+                        variantConflicts.put(String.valueOf(e.getKey()), e.getValue().size());
+                    }
+                }
 
                 // 作文只保留「应用文」「续写」两篇：按长度排序后取互不相似的前两条
                 if (writings.size() > 2) {
@@ -262,20 +326,25 @@ public class MainActivity extends AppCompatActivity {
         String[] parts = pageText.split("\\n\\s*\\n");
         for (String p : parts) {
             String t = p.trim();
-            if (t.length() < 30) continue;
+            if (t.length() < 12) continue;
             String nt = t.replaceAll("\\s+", "").toLowerCase();
             boolean dup = false;
+            int replaceIdx = -1;
             Set<String> newLines = new LinkedHashSet<>();
             for (String ln : t.split("\n")) {
                 String k = ln.replaceAll("\\s+", "").toLowerCase();
                 if (k.length() > 12) newLines.add(k);
             }
-            for (Para e : paras) {
+            for (int i = 0; i < paras.size(); i++) {
+                Para e = paras.get(i);
                 String ne = e.text.replaceAll("\\s+", "").toLowerCase();
-                if (ne.contains(nt) || nt.contains(ne)) { dup = true; break; }
+                // 新段包含旧段 → 用更完整的新段替换，避免开头被截掉
+                if (nt.contains(ne) && nt.length() > ne.length()) { replaceIdx = i; break; }
+                if (ne.contains(nt)) { dup = true; break; }
                 if (jaccard(nt, ne) >= 0.7) { dup = true; break; }
             }
-            if (!dup) paras.add(new Para(frame, t));
+            if (replaceIdx >= 0) paras.set(replaceIdx, new Para(paras.get(replaceIdx).frame, t));
+            else if (!dup) paras.add(new Para(frame, t));
         }
     }
 
@@ -393,6 +462,10 @@ public class MainActivity extends AppCompatActivity {
             int blurry = Math.max(0, lastTotalFrames - lastKeptFrames);
             w.add("共抽取 " + lastTotalFrames + " 帧，清晰可用 " + lastKeptFrames + " 帧"
                     + (blurry > 0 ? "，另有 " + blurry + " 帧因画面模糊被丢弃" : ""));
+        }
+        for (Map.Entry<String, Integer> e : variantConflicts.entrySet()) {
+            w.add("第 " + e.getKey() + " 题在不同帧里出现了不同版本（" + e.getValue()
+                    + " 个），已取出现次数最多的一个，建议核对");
         }
         for (Question q : questions) {
             if (q.sharp > 0 && q.sharp < 1500) {

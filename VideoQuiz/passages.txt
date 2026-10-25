@@ -1,0 +1,11 @@
+pages=11 blocks=5
+
+[块1] 第⼀节（共 15 ⼩题；每⼩题 2.5 分，满分 37.5 分） 阅读下列短⽂，从每题所给的 A、B、C、D 四个选项中，选出最佳选项。 Los Angeles is famously known for its sun, surf and celebrities, but the city's rich history in sports is the cherry on top. Since its opening in 2020, SoFi Stadium has continued to set the s
+
+[块2] A terrifying thought occurred to me. "Do you even know how to use a dictionary?" "Of course," he scoffed. "Every chapter is a different letter." I laughed out loud. I had never thought of the dictionary as something read from beginning to end. We pored over a 
+
+[块3] What could go wrong? Actually, something could, according to a new study. Oaks and sweetgums, which account for a majority of the city's trees, produce huge amounts of volatile compounds called isoprenes (异戊⼆烯). Harmless by themselves, isoprenes interact rapid
+
+含 New York City: False
+
+含 In line with: False

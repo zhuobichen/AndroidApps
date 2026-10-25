@@ -1,0 +1,426 @@
+试卷原⽂与答案
+由 VideoQuiz 从录像⾃动⽣成
+识别置信度：88/100（良）
+· 画⾯清晰度 98/100（题⽬来源帧中位清晰度 2451）
+· 题⽬完整度 91/100（45 题⾥ 41 题题⼲与选项⻬全；不完整：36、37、38、39）
+· 覆盖完整度 100/100（21-65 区间实到 45 题）
+· 帧质量 100/100（56/56 帧可⽤）
+【原⽂】
+Los Angeles is famously known for its sun, surf and celebrities, but the city's rich history in sports is the cherry on top.
+Since its opening in 2020, SoFi Stadium has continued to set the standard for the fan experience.
+SoFi Stadium is the home venue for both the Los Angeles Rams and the Los Angeles Chargers, with the Rams
+playing the most home games here each season. It also hosts the annual LA Bowl and, in 2026, several World Cup
+matches. Here is what you need to know before your visit.
+Parking: There are several parking options. You can book parking in advance via ParkWhiz, an app that lets you
+purchase a parking pass for speciﬁc events. Buying a pass in advance helps you avoid higher rates on site. Parking
+can cost between $50 and $100. Tailgating (在停⻋场聚餐) is permitted at the "pink" lots: H, I, J, P and Q.
+Transportation: For fans hoping to avoid parking, the City of Inglewood Park and Ride program offers off-site parking
+with a shuttle that runs every 15 minutes to and from the stadium. GTrans, Torrance Transit and the Metro C Line are
+also convenient options.
+Hotels: There are plenty of hotels nearby. For a prime location, check out Sonder Lum Hotel, right across the street
+from the stadium, or the USC Hotel, a couple of miles north. Other options include the LAX airport hotels, all within
+three miles of the stadium.
+2026 World Cup Schedule:
+Fri, June 12 USA vs. Paraguay
+阅读下列短⽂，从每题所给的 A、B、C、D 四个选项中，选出最佳选项。
+2026 World Cup Schedule:
+● Fri, June 12 USA vs. Paraguay
+● Mon, June 15 Iran vs. New Zealand
+21. Which team will play the most games at the stadium this month?
+    A. Washington Commanders.
+    B. Los Angeles Rams.
+    C. Los Angeles Chargers.
+    D. New Orleans Saints.
+22. Which hotel is the nearest to the stadium?
+    A. Sonder Lum Hotel.
+    B. The Ritz-Carlton Los Angeles.
+    C. The H Hotel Los Angeles.
+    D. The Renaissance LA Airport Hotel
+
+23. What do you need to do if you want to park at the stadium?
+    A. Call the parking staff.
+    B. Prepay the parking fee.
+    C. Obtain a parking pass.
+    D. Choose a parking zone.
+【原⽂】
+A terrifying thought occurred to me. "Do you even know how to use a dictionary?"
+"Of course," he scoffed. "Every chapter is a different letter." I laughed out loud. I had never thought of the dictionary as
+something read from beginning to end.
+We pored over a paperback dictionary together. It took Kevin a few tries to ﬁnd the word, and he was overwhelmed
+that an entire page could be devoted to words sharing the same three beginning letters. "How can there be this many
+words?" he asked, with alternating horror and awe.
+I was just a bit older than Kevin when I decided to learn as many words as I could, marking every entry I looked up
+with a small penciled dot. The dictionary was a gift for my 13th birthday. Although neither of my parents went to
+college, they made clear that my education was a family priority. I marked up my dictionary because I enjoyed the
+process. I did it for the experience, not the result.
+The dictionary was stolen at the end of my freshman year of college. When Kevin asked to see it, a small pain gripped
+my chest. "The book is gone," I said.
+"That is so sad," he said. "But you still know all those words, even without the book."
+24. What does Kevin usually do to get the meaning of a word?
+    A. Use electronic devices.
+    B. Consult a paper dictionary.
+    C. Guess from the context.
+    D. Turn to his English teacher.
+25. How did Kevin feel while looking up the word in the dictionary?
+    A. Annoyed.
+    B. Disappointed.
+    C. Encouraged.
+    D. Astonished.
+26. What can we learn about the author's ﬁrst dictionary?
+    A. It helped her through the college.
+    B. It was given to Kevin as a gift.
+    C. It bore witness to her efforts.
+    D. It was a valuable limited edition.
+27. What has the author come to realize about learning?
+    A. It is never too late to start.
+    B. Motivation is what really matters.
+    C. Children need role models.
+    D. Dictionaries are still a useful tool.
+【原⽂】
+
+Actually, something could, according to a new study. Oaks and sweetgums, which account for a majority of the city's
+trees, produce huge amounts of volatile compounds called isoprenes (异戊⼆烯). Harmless by themselves, isoprenes
+interact rapidly with nitrogen oxides emitted by vehicles to form ground-level ozone, a prime factor in many respiratory
+ailments such as asthma.
+The research found that if the city maintains past species patterns, isoprene production in Manhattan will rise by
+about 140%, and summer ozone levels by as much as 30%.
+"We're all for planting more trees. They bring so many good things." said study coauthor Roisin Commane. "But if
+we're not careful, we could make air quality worse."
+But isoprene from trees alone is not to blame. Ozone cannot form without nitrogen oxides, emitted during the
+burning of fossil fuels by vehicles and industry. Many city dwellers remain oblivious to this connection, assuming
+trees can only ever clean the air. "If we lowered emissions signiﬁcantly, trees would not be a problem," said lead author
+Dandan Wei. "It is the cars."
+The Parks Department is aware of the issue. Like the study authors, scientist Novem Auyeung said trees should not
+be viewed as the enemy. "We could plant any trees we want, if we just rethink
+32. What does the study imply regarding oaks and sweetgums?
+    A. They attract more native insects.
+    B. They absorb less carbon dioxide.
+    C. They suffer from a hotter climate.
+    D. They pose the same threat to us.
+33. According to the study, which group was more likely to think beyond daily life?
+    A. Existing trees will gradually disappear.
+    B. A longer dry season is approaching.
+    C. A hotter climate is approaching.
+    D. Existing trees will be replaced by new ones.
+34. What is the author's attitude towards the Parks Department's tree policy?
+    A. Supportive.
+    B. Disapproving.
+    C. Objective.
+    D. Uncertain.
+28. What does the new study imply regarding oaks and sweetgums?
+    A. They affect the growth of other trees.
+    B. They absorb less carbon than expected.
+    C. They harm people's health indirectly.
+    D. They raise the local temperature slowly.
+29. Which of the following may Commane suggest based on their study?
+    A. Cutting down the isoprene-producing trees.
+    B. Suspending tree-planting for a few decades.
+    C. Changing the species of trees in new plantings.
+    D. Removing isoprene released by existing trees.
+
+30. What does the underlined phrase "oblivious to" in paragraph 5 mean?
+    A. Honest about.
+    B. Unaware of.
+    C. Related to.
+    D. Optimistic about.
+31. What would Auyeung probably advocate?
+    A. Reducing car use in daily life.
+    B. Providing animals with new habitats.
+    C. Controlling population growth.
+    D. Doing more research on the problem.
+【原⽂】
+Since the dawn of philosophy, thinkers from Plato to Kant have considered how beauty affects the human mind.
+Now, a new study from the University of Cambridge suggests that contemplating the beauty of artistic objects boosts
+our ability to think in abstract ways and see the bigger picture.
+Researchers say engaging with beauty helps us escape the mental trappings of daily life and break our everyday
+patterns of thought, shifting us into a more expansive state of mind.
+A team of Cambridge psychologists used the University's modern art gallery as a living laboratory. For the study, 187
+people visited an exhibition of handmade clay objects. "Ceramics (陶瓷) were ideal," said Professor Simone Schnall. "A
+glorious painting would be too striking. We needed art subtle in form, requiring focused contemplation."
+Participants were split into two groups. The beauty group was asked to give a rating of how beautiful each object
+was, while the control group simply matched a line drawing with the artwork. The rating task, though simple, made all
+the difference.
+The beauty group scored almost 14% higher than the control group in abstract thinking, and reported greater interest
+in life's bigger questions. They also felt more moved, enlightened and inspired.
+35. What does the study encourage people to do?
+    A. Visit galleries more often.
+    B. Spend less time on screens.
+    C. Buy handmade ceramics.
+    D. Develop their critical thinking.
+36. 36__________.
+37. 37__________.
+38. 38__________.
+    A. These capabilities make AI a powerful tool for art restoration.
+    B. Visitor data, if misused, could lead to serious privacy issues.
+    C. In short, AI is changing the museum experience in many respects.
+    D. It tailors recommendations to different ages and learning styles.
+    E. Museums have always been important places for learning.
+    F. Furthermore, AI chatbots are replacing traditional audio guides.
+    G. AI is also used to design more attractive exhibits.
+
+39. 39__________.
+    A. These capabilities make AI a powerful tool for art restoration.
+    B. Visitor data, if misused, could lead to serious privacy issues.
+    C. In short, AI is changing the museum experience in many respects.
+    D. It tailors recommendations to different ages and learning styles.
+    E. Museums have always been important places for learning.
+    F. Furthermore, AI chatbots are replacing traditional audio guides.
+    G. AI is also used to design more attractive exhibits.
+40. 40________ Strict rules are therefore needed to ensure that every visitor's privacy is fully protected.
+    A. These capabilities make AI a powerful tool for art restoration.
+    B. Visitor data, if misused, could lead to serious privacy issues.
+    C. In short, AI is changing the museum experience in many respects.
+    D. It tailors recommendations to different ages and learning styles.
+    E. Museums have always been important places for learning.
+    F. Furthermore, AI chatbots are replacing traditional audio guides.
+    G. AI is also used to design more attractive exhibits.
+41. The 41______ that people only really knew Ohio for the three C's - Cleveland, Cincinnati, or Columbus (not
+Cortland!) - came quickly when I decided to go to school in central Pennsylvania.
+    A. fantasy
+    B. prejudice
+    C. realization
+    D. expectation
+42. Half of my peers didn't even realize I lived a 42 ______ three and a half hours away.
+    A. only
+    B. indeed
+    C. still
+    D. even
+43. The 43 ______ are never-ending.
+    A. tests
+    B. questions
+    C. games
+    D. debates
+44. I was a unicorn in their eyes, a 44 ______ Or, on second thought, maybe just a country hick.
+    A. success
+    B. victim
+    C. novelty
+    D. problem
+45. As I grow older, I'm more and more 45 ______ for my small town roots.
+    A. thankful
+    B. hopeful
+    C. suitable
+    D. reliable
+
+46. Sure, my friends and I loved to 46 ______ about how bored we were in the middle of nowhere, 47 ______, as I
+ﬁnish up my junior year of college, I'm convinced that it took 48 ______ our small town to realize how much we
+actually did love it and what exactly we loved about it.
+    A. dream
+    B. lie
+    C. bear
+    D. complain
+47. Sure, my friends and I loved to 46 ______ about how bored we were in the middle of nowhere, 47 ______, as I
+ﬁnish up my junior year of college, I'm convinced that it took 48 ______ our small town to realize how much we
+actually did love it and what exactly we loved about it.
+    A. therefore
+    B. however
+    C. instead
+    D. otherwise
+48. Sure, my friends and I loved to 46 ______ about how bored we were in the middle of nowhere, 47 ______, as I
+ﬁnish up my junior year of college, I'm convinced that it took 48 ______ our small town to realize how much we
+actually did love it and what exactly we loved about it.
+    A. touring
+    B. challenging
+    C. leaving
+    D. protecting
+49. For one, the pace of life isn't anxiety provoking and people really 49 ______ connecting to each other.
+    A. value
+    B. admit
+    C. fear
+    D. remember
+50. That means that you do more than just talk to your next door neighbors - in a lot of cases, they're truly so 50
+______ of your family.
+    A. advantage
+    B. example
+    C. owner
+    D. extension
+51. So much of this 51______ revolves around being outside and knowing the ins and outs of the town, being
+present and mindful of your 52______ is a critical part of the culture.
+    A. lifestyle
+    B. landscape
+    C. procedure
+    D. personality
+52. So much of this 51______ revolves around being outside and knowing the ins and outs of the town, being
+present and mindful of your 52______ is a critical part of the culture.
+    A. ﬁndings
+    B. surroundings
+    C. belongings
+    D. greetings
+
+53. As I move through my college years, I 53 ______ the visits to my little hometown.
+    A. give up
+    B. put off
+    C. face up to
+    D. look forward to
+54. I am grateful for the 54 ______ that I had growing up and know that wherever my next adventure takes me, I can
+55 ______ my small town roots to lead me in the right direction.
+55. I am grateful for the 54 ______ that I had growing up and know that wherever my next adventure takes me, I can
+55 ______ my small town roots to lead me in the right direction.
+56. It is also common for them 56____ (hold) on traditional Chinese holidays such as the Spring Festival, also known
+as the Chinese New Year, and Mid-Autumn Festival, as well as other local festivals.
+57. The exact dates and 57____ (frequent) of dajis vary from region to region.
+58. Dajis evolved from the folk custom of trading goods, which can be traced back to 58 ____ Han Dynasty (202
+B.C.-A.D.
+59. In the old days, transportation and communication 59 ____ (be) so poor that it was challenging for households
+to exchange items to meet their needs for daily 60 ____ (necessity).
+60. In the old days, transportation and communication 59 ____ (be) so poor that it was challenging for households
+to exchange items to meet their needs for daily 60 ____ (necessity).
+61. They would trade their surplus items 61 ____ the goods they needed.
+62. 62 ____ (Draw)by the enticing aromas, they hurry to food stalls, 63 ____ steamed dumplings and hot noodle
+soup.
+63. 62 ____ (Draw)by the enticing aromas, they hurry to food stalls, 63 ____ steamed dumplings and hot noodle
+soup.
+64. Before 64 ____ (head) back home, they purchase some fresh fruit and vegetables from local farmers, which are
+much 65 ____ (cheap)than those in supermarkets, and embark on their journey back home.
+65. Before 64 ____ (head) back home, they purchase some fresh fruit and vegetables from local farmers, which are
+much 65 ____ (cheap)than those in supermarkets, and embark on their journey back home.
+【原⽂】
+
+Hailey Slovik of Detroit said she's learned a valuable lesson about winter driving.
+The 27-year-old was one of dozens - possibly hundreds - of people who found themselves marooned in
+Chatham-Kent trapped by a ﬁerce winter storm Dec. 23.
+The just-in-time-for-Christmas blizzard saw Mayor Darrin Canniff declare a state of emergency and the closure of both
+Highway 401 and Highway 40, as ﬁrst responders and snow plow operators grappled with drifting snow in whiteout
+conditions.
+The extreme weather event saw local residents and business owners open their doors to the stranded, and many
+travellers were also welcomed to emergency shelters at schools, churches, arenas and even Chatham's Wal-Mart.
+On her way to Toronto to visit her boyfriend and meet his family for the ﬁrst time, Slovik set out in the afternoon. She
+heard there was a storm coming, but didn't give it a lot of thought thinking she could "beat it" and go around any
+problem areas.
+"I thought it was like Michigan where they detoured you around the parts of the road that were closed," Slovik said. "I
+didn't realize that wouldn't happen...I didn't think it would be a big deal."
+Old Man Winter had different plans. Slovik discovered Hwy. 401 was closed from Tilbury to London, with police
+redirecting off the highway towards Chatham.
+Now facing a blinding whiteout, her Buick Lacrosse slipped into a ditch somewhere. However, she managed to get
+car out, crawling along unfamiliar roads.
+out in the afternoon. She heard there was a storm coming, but didn't give it a lot of thought thinking she could "beat
+it" and go around any problem areas.
+"I thought it was like Michigan where they detoured you around the parts of the road that were closed," Slovik said. "I
+didn't realize that wouldn't happen...I didn't think it would be a big deal."
+Old Man Winter had different plans. Slovik discovered Hwy. 401 was closed from Tilbury to London, with police
+redirecting off the highway towards Chatham.
+Now facing a blinding whiteout, her Buick Lacrosse slipped into a ditch somewhere. However, she managed to get
+car out, crawling along unfamiliar roads.
+As night lengthened Slovik said she began to panic. She found herself on Bloomﬁeld Road but got stuck when she
+attempted to turn the car around.
+Other vehicles stopped to see if she was okay. A passerby offered Slovik a blanket that she pulled around herself to
+keep warm, as she turned the car's ignition on and off to charge her phone and create heat.
+Eventually she fell asleep.
+Enter Good Samaritan Jessie. Slovik awoke to a knock on her car window and an invitation to come in out of the
+cold.
+"He asked if I was OK, and if I needed anything and then invited me to come and sleep on the couch," Slovik said. "I
+was so happy and I was so grateful."
+The next morning, Jessie and his friend Chauntel helped Slovik plot her next move. Because her car was stuck with
+no scheduled time to be towed out, she decided to catch the train to Toronto and return when the car was pulled out.
+However, Slovik's impromptu hosts weren't done helping. They helped Slovik purchase a VIA rail ticket to Toronto
+and gave her a suitcase to carry her Christmas gifts in.
+"They bought my ticket and I paid them back," she said, noting it was her ﬁrst-ever train ride.
+On Boxing Day, Slovik got a ride to Chatham with her boyfriend's family, retrieved the car and headed back to the U.S.
+The American traveller said she's in awe of how events unfolded during the storm and of the kindness of the
+strangers she met.
+"I wasn't expecting this kind of help," Slovak explained. "It's like a Christmas miracle. The chances of me landing in
+someone's yard like that...it's like I met an angel."
+
+写作题
+作⽂ 1：阅读下⾯材料，根据其内容和所给段落开头语续写⼀段英⽂，使之构成⼀篇完整的短⽂。Hailey Slovik of
+Detroit said she's learned a valuable lesson about winter driving. The 27-year-old was one of dozens - possibly
+hundreds - of people who found themselves marooned in Chatham-Kent trapped by a ﬁerce winter storm Dec. 23.
+The just-in-time-for-Christmas blizzard saw Mayor Darrin Canniff declare a state of emergency and the closure of both
+Highway 401 and Highway 40, as ﬁrst responders and snow plow operators grappled with drifting snow in whiteout
+conditions. The extreme weather event saw local residents and business owners open their doors to the stranded,
+and many travellers were also welcomed to emergency shelters at schools, churches, arenas and even Chatham's
+Wal-Mart. On her way to Toronto to visit her boyfriend and meet his family for the ﬁrst time, Slovik set out in the
+afternoon. She heard there was a storm coming, but didn't give it a lot of thought thinking
+【写作思路】写作思路：从Slovik的视⻆出发，描述她在暴⻛雪中被困后得到当地⼈帮助的经历，以及她从中领悟到的关于冬季
+驾驶和⼈间温暖的教训。
+【参考范⽂·不是唯⼀答案】
+Feeling conﬁdent in her driving skills, she thought she could outrun the storm. However, as she drove along Highway
+401, the snow grew heavier and visibility dropped sharply. Soon her car got stuck in a snowdrift, and she could not
+move it at all. Panic set in as the temperature fell. Fortunately, a local couple knocked on her window and invited her to
+their nearby home. There she enjoyed warm food and a safe shelter. The next morning, she ﬁnally understood that
+winter driving demands respect for nature and that kindness from strangers can light up the darkest storm.
+作⽂ 2：你校英⽂报“Opinion”栏⽬正在进⾏征稿，请你就未来⼤学⽣活的三个要素：学习（study）、睡眠（sleep）
+和社交（socialize），按重要性排序，并阐述理由。
+注意：
+1. 写作词数应为 80 左右；
+2. 请按如下格式在答题纸的相应位置作答。
+【写作思路】写作思路：先明确将学习排在⾸位、睡眠次之、社交第三，再分别说明学习是⼤学核⼼任务、睡眠保障⾝⼼健康与
+学习效率、社交是锦上添花但不宜过度占⽤时间。
+【参考范⽂·不是唯⼀答案】
+When it comes to university life, I rank study ﬁrst, sleep second and socializing third.
+Study matters most because university is above all a place for learning. Academic performance shapes our future
+careers, so it deserves our greatest effort. Sleep comes next, as enough rest keeps us healthy and sharpens our
+minds, which in turn improves our study eﬃciency. Without sleep, neither learning nor anything else can last long.
+Socializing, though valuable for making friends and building skills, should come last. It enriches life but must not take
+priority over study and health.
+In short, a balanced university life begins with study, is supported by sleep, and is brightened by socializing.
+识别质量提⽰
+· 共抽取 56 帧，清晰可⽤ 56 帧
+· 第 32 题来源画⾯偏模糊（清晰度 1325），建议核对或重拍这⼀段
+· 第 33 题来源画⾯偏模糊（清晰度 1325），建议核对或重拍这⼀段
+· 第 34 题来源画⾯偏模糊（清晰度 1325），建议核对或重拍这⼀段
+· 第 56 题来源画⾯偏模糊（清晰度 306），建议核对或重拍这⼀段
+· 第 57 题来源画⾯偏模糊（清晰度 306），建议核对或重拍这⼀段
+
+如果是拍摄问题（抖动、反光、没拍全），建议重拍对应段落后再导⼊。
+参考答案
+21. B ⽂中明确说Rams每个赛季在此主场作战次数最多。
+22. A
+Sonder Lum Hotel就在体育场街对⾯，距离最近。
+23. C 需通过ParkWhiz提前购买停⻋通⾏证。
+24. A
+Kevin习惯⽤电⼦设备查词义，不知如何⽤纸质词典。
+25. D 他发现整⻚都是相同开头字⺟的词，感到震惊⼜敬畏。
+26. C 作者在词典上做标记，词典⻅证了她的努⼒。
+27. B 作者强调学习是出于兴趣和体验，动机最重要。
+32. D 研究指出这些树同样会带来健康威胁。
+33. C 研究显⽰若维持现有树种，夏季臭氧会上升，⽓候更热。
+34. C 作者客观陈述研究结果与各⽅观点，态度中⽴。
+28. C 橡树和枫⾹树释放的异戊⼆烯会间接形成臭氧危害健康。
+29. C
+Commane建议谨慎选择树种，改变新植树的种类。
+30. B
+oblivious to意为“未意识到”，即unaware of。
+31. A
+Auyeung认为问题在汽⻋，应减少⽇常⽤⻋。
+35. A 研究⿎励⼈们多接触艺术之美，常去美术馆。
+36. E 空格处引出博物馆作为学习场所的论述。
+37. D 该句说明AI能按年龄和学习⻛格定制推荐。
+38. G 该句补充AI⽤于设计更具吸引⼒的展览。
+39. F 该句进⼀步说明AI聊天机器⼈取代传统语⾳导览。
+40. B 后⽂提到需要严格规则保护隐私，故此处谈数据滥⽤⻛险。
+41. C ⼈们只知俄亥俄三⼤城市，这是作者去外地读书后的“认识”。
+42. A 只有三⼩时半⻋程，⽤only强调距离之近。
+43. B 后⽂列举各种提问，故为“问题没完没了”。
+44. C 在同学眼中她像独⻆兽，是稀罕的新奇事物。
+45. A
+be thankful for表⽰对⼩镇出⾝⼼怀感激。
+46. D
+complain about抱怨，符合“抱怨⽆聊”的语境。
+47. B 前后为转折关系，⽤however。
+48. C 离开⼩镇后才意识到⾃⼰多爱它。
+49. A
+value connecting to each other意为重视彼此联系。
+50. D 邻居⼏乎是家庭的延伸，an extension of。
+51. A 这种⽣活⽅式围绕⼾外活动展开。
+52. B 留意周围环境是当地⽂化的重要部分。
+
+53. D
+look forward to期待回⼩镇的探访。
+54. B 此处指成⻓的环境，surroundings最贴切。
+55. C
+face up to意为正视、⾯对，符合语境。
+56. to hold
+be common for sb to do sth，⽤不定式。
+57. frequency 与dates并列，需名词形式。
+58. the 朝代前⽤定冠词the Han Dynasty。
+59. were 主语为复数且叙述过去，⽤were。
+60. necessities
+daily necessities⽇常必需品，⽤复数。
+61. for
+trade A for B⽤介词for。
+62. Drawn 过去分词作状语，表被动。
+63. buying 现在分词作伴随状语。
+64. heading
+before后接动名词。
+65. cheaper
+much修饰⽐较级，⽤cheaper。

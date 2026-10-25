@@ -1,0 +1,16 @@
+参考句数: 14
+缺  (0.69) In line with longstanding initiatives to expand the green spaces, New York City is plantin
+OK  (0.81) They provide shade, lower surface temperatures, absorb a surprising amount of airborne car
+OK  (0.76) Something could go wrong, though, according to a new study.
+OK  (0.83) Oaks and sweetgums, which currently account for a majority of the city's trees, produce hu
+缺  (0.73) Harmless by itself, isoprene interacts rapidly with polluting nitrogen oxides released by 
+缺  (0.70) The research, carried out by scientists at the Columbia Climate School and other instituti
+OK  (0.99) We're all for planting more trees.
+OK  (0.99) They bring so many good things, said study coauthor Roisin Commane.
+缺  (0.70) But if we're not careful, we could make air quality worse.
+缺  (0.66) The Parks Department is not oblivious to the issue.
+缺  (0.44) A study carried out by some of its researchers several years ago concluded that city trees
+缺  (0.46) We didn't make a big deal of that, said Novem Auyeung, a Parks Department senior scientist
+缺  (0.68) She said trees should not be viewed as the enemy.
+OK  (0.81) Oaks are keystone species, she pointed out, providing food and habitat for native insects,
+缺失/差异较大: 8 句
