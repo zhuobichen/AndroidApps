@@ -10,6 +10,7 @@ public class Question {
     public List<String> options = new ArrayList<>();
     public String answer = "";
     public String reason = "";
+    public int firstFrame = 0;
 
     public String toDisplay() {
         StringBuilder sb = new StringBuilder();

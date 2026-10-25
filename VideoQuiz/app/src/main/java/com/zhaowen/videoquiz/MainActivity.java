@@ -37,6 +37,14 @@ public class MainActivity extends AppCompatActivity {
     private Uri videoUri;
     private final List<Question> questions = new ArrayList<>();
     private final Set<String> passages = new LinkedHashSet<>();
+    private final List<Para> paras = new ArrayList<>();
+
+    /** 一段原文，记录它出现在第几帧（用于还原试卷顺序） */
+    private static class Para {
+        int frame;
+        String text;
+        Para(int f, String t) { frame = f; text = t; }
+    }
     private File lastPdf;
     private boolean busy = false;
 
@@ -142,6 +150,7 @@ public class MainActivity extends AppCompatActivity {
                         for (Question q : r.questions) {
                             Question old = map.get(q.no);
                             if (old == null) {
+                                q.firstFrame = idx;
                                 map.put(q.no, q);
                                 newOne = true;
                             } else {
@@ -152,6 +161,7 @@ public class MainActivity extends AppCompatActivity {
                         }
                         if (r.passage != null && !r.passage.trim().isEmpty()) {
                             passages.add(r.passage.trim());
+                            addParagraph(r.passage, idx);
                         }
                         if (newOne) { added[0]++; emptyRun[0] = 0; } else { emptyRun[0]++; }
                         final int n = map.size();
@@ -198,6 +208,43 @@ public class MainActivity extends AppCompatActivity {
                 setBusy(false);
             }
         }).start();
+    }
+
+    /** 把一页的正文按段落切开，去重后按首次出现顺序保存 */
+    private void addParagraph(String pageText, int frame) {
+        String[] parts = pageText.split("\\n\\s*\\n");
+        for (String p : parts) {
+            String t = p.trim();
+            if (t.length() < 30) continue;
+            String nt = t.replaceAll("\\s+", "").toLowerCase();
+            boolean dup = false;
+            Set<String> newLines = new LinkedHashSet<>();
+            for (String ln : t.split("\n")) {
+                String k = ln.replaceAll("\\s+", "").toLowerCase();
+                if (k.length() > 12) newLines.add(k);
+            }
+            for (Para e : paras) {
+                String ne = e.text.replaceAll("\\s+", "").toLowerCase();
+                if (ne.contains(nt) || nt.contains(ne)) { dup = true; break; }
+                if (jaccard(nt, ne) >= 0.7) { dup = true; break; }
+            }
+            if (!dup) paras.add(new Para(frame, t));
+        }
+    }
+
+    /** 字符三元组 Jaccard，用来判断两段文字是不是同一段 */
+    private static double jaccard(String a, String b) {
+        java.util.Set<String> sa = grams(a), sb = grams(b);
+        if (sa.isEmpty() || sb.isEmpty()) return 0;
+        int inter = 0;
+        for (String g : sa) if (sb.contains(g)) inter++;
+        return inter / (double) (sa.size() + sb.size() - inter);
+    }
+
+    private static java.util.Set<String> grams(String s) {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        for (int i = 0; i + 3 <= s.length(); i++) out.add(s.substring(i, i + 3));
+        return out;
     }
 
     /** 找出题号区间的空缺，如 41-48 */
@@ -283,7 +330,40 @@ public class MainActivity extends AppCompatActivity {
         status("正在生成 PDF…");
         new Thread(() -> {
             try {
-                File f = PdfExporter.export(getFilesDir(), questions, true);
+                // 按视频顺序把「原文段落」和「题目」排成时间线，
+                // 连续段落合并成一块，题目单独成块
+                List<Object[]> events = new ArrayList<>();
+                for (Para p : paras) events.add(new Object[]{p.frame, 0, p.text});
+                for (Question q : questions) events.add(new Object[]{q.firstFrame, 1, q});
+                events.sort((a, b) -> {
+                    int fa = (int) a[0], fb = (int) b[0];
+                    if (fa != fb) return Integer.compare(fa, fb);
+                    return Integer.compare((int) a[1], (int) b[1]);
+                });
+
+                List<PdfExporter.Block> blocks = new ArrayList<>();
+                PdfExporter.Block cur = null;
+                for (Object[] e : events) {
+                    int kind = (int) e[1];
+                    if (kind == 0) {
+                        if (cur == null || !cur.questions.isEmpty()) {
+                            cur = new PdfExporter.Block();
+                            cur.frame = (int) e[0];
+                            blocks.add(cur);
+                        }
+                        String t = (String) e[2];
+                        cur.passage = cur.passage == null ? t : cur.passage + "\n\n" + t;
+                    } else {
+                        if (cur == null || cur.passage != null) {
+                            cur = new PdfExporter.Block();
+                            cur.frame = (int) e[0];
+                            blocks.add(cur);
+                        }
+                        cur.questions.add((Question) e[2]);
+                    }
+                }
+
+                File f = PdfExporter.export(getFilesDir(), blocks, true);
                 lastPdf = f;
                 ui.post(() -> {
                     status("已生成：" + f.getName());
