@@ -38,6 +38,8 @@ public class MainActivity extends AppCompatActivity {
     private final List<Question> questions = new ArrayList<>();
     private final Set<String> passages = new LinkedHashSet<>();
     private final List<Para> paras = new ArrayList<>();
+    private final List<String> writings = new ArrayList<>();
+    private final List<String> essays = new ArrayList<>();
 
     /** 一段原文，记录它出现在第几帧（用于还原试卷顺序） */
     private static class Para {
@@ -47,6 +49,8 @@ public class MainActivity extends AppCompatActivity {
     }
     private File lastPdf;
     private boolean busy = false;
+    private int lastTotalFrames = 0;
+    private int lastKeptFrames = 0;
 
     private TextView tvVideo, tvStatus, tvResult;
     private ProgressBar progress;
@@ -130,8 +134,10 @@ public class MainActivity extends AppCompatActivity {
                 final int[] skipped = {0};
                 final Map<Integer, Question> map = new LinkedHashMap<>();
                 final float[][] lastFp = {null};
+                final int[] totalFrames = {0};
 
                 int kept = FrameSampler.sample(this, videoUri, 2, 120, (bmp, t, sharp, idx, total) -> {
+                    totalFrames[0] = total;
                     try {
                         // 静止帧过滤：和上一帧几乎一样就不花钱
                         float[] fp = Fingerprint.of(bmp);
@@ -151,6 +157,7 @@ public class MainActivity extends AppCompatActivity {
                             Question old = map.get(q.no);
                             if (old == null) {
                                 q.firstFrame = idx;
+                                q.sharp = sharp;
                                 map.put(q.no, q);
                                 newOne = true;
                             } else {
@@ -158,6 +165,15 @@ public class MainActivity extends AppCompatActivity {
                                 if (q.stem.length() > old.stem.length()) old.stem = q.stem;
                                 if (q.options.size() > old.options.size()) old.options = q.options;
                             }
+                        }
+                        for (String wr : r.writings) {
+                            boolean dupW = false;
+                            for (String oldW : writings) {
+                                if (jaccard(wr.replaceAll("\\s+", ""), oldW.replaceAll("\\s+", "")) >= 0.45) {
+                                    dupW = true; break;
+                                }
+                            }
+                            if (!dupW && writings.size() < 4) writings.add(wr);
                         }
                         if (r.passage != null && !r.passage.trim().isEmpty()) {
                             passages.add(r.passage.trim());
@@ -183,6 +199,34 @@ public class MainActivity extends AppCompatActivity {
                 // 完形选项表可能没有题干，补占位，避免 PDF 里空着
                 for (Question q : map.values()) {
                     if (q.stem.isEmpty()) q.stem = "（第 " + q.no + " 题，题干见原文）";
+                    q.stem = trimToOwnBlank(q.no, q.stem);
+                    // 只有横线（如 36______）的题，从原文里找回它所在的那句话
+                    if (q.stem.matches("^\\d+\\s*_{2,}\\s*\\.?$")) {
+                        String ctx = sentenceWithBlank(q.no);
+                        if (ctx != null) q.stem = ctx;
+                    }
+                }
+
+                lastTotalFrames = totalFrames[0];
+                lastKeptFrames = kept;
+
+                // 作文只保留「应用文」「续写」两篇：按长度排序后取互不相似的前两条
+                if (writings.size() > 2) {
+                    List<String> sortedW = new ArrayList<>(writings);
+                    sortedW.sort((a, b) -> Integer.compare(b.length(), a.length()));
+                    List<String> keep = new ArrayList<>();
+                    for (String w : sortedW) {
+                        boolean dup = false;
+                        for (String k : keep) {
+                            if (jaccard(w.replaceAll("\\s+", ""), k.replaceAll("\\s+", "")) >= 0.35) {
+                                dup = true; break;
+                            }
+                        }
+                        if (!dup) keep.add(w);
+                        if (keep.size() >= 2) break;
+                    }
+                    writings.clear();
+                    writings.addAll(keep);
                 }
 
                 List<Question> sorted = new ArrayList<>(map.values());
@@ -247,6 +291,71 @@ public class MainActivity extends AppCompatActivity {
         return out;
     }
 
+    /** 从已识别的原文里，找出包含「题号 + 横线」的那一句 */
+    private String sentenceWithBlank(int no) {
+        StringBuilder all = new StringBuilder();
+        for (Para p : paras) all.append(p.text).append("\n");
+        String text = all.toString();
+        if (text.isEmpty()) return null;
+        String[] sentences = text.split("(?<=[.!?])\\s+|\\n+");
+        java.util.regex.Pattern pat = java.util.regex.Pattern
+                .compile("(?<![0-9])" + no + "\\s*_{2,}");
+        String best = null;
+        int bestIdx = -1;
+        for (int i = 0; i < sentences.length; i++) {
+            String t = sentences[i].trim();
+            if (t.length() < 8 || t.length() > 400) continue;
+            if (pat.matcher(t).find()) {
+                if (best == null || t.length() < best.length()) { best = t; bestIdx = i; }
+            }
+        }
+        // 空格在句末时会单独成句，把上一句拼回来
+        if (best != null && best.length() < 60 && bestIdx > 0) {
+            String prev = sentences[bestIdx - 1].trim();
+            if (prev.length() > 15) best = prev + " " + best;
+        }
+        return best;
+    }
+
+    /** 一句里可能有两个空格（51/52），只保留包含本题空格的那一句 */
+    static String trimToOwnBlank(int no, String stem) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?<![0-9])" + no + "\\s*_{2,}").matcher(stem);
+        if (!m.find()) return stem;
+        String[] parts = stem.split("(?<=[.!?])\\s+");
+        if (parts.length <= 1) return stem;
+        for (String p : parts) {
+            java.util.regex.Matcher mm = java.util.regex.Pattern
+                    .compile("(?<![0-9])" + no + "\\s*_{2,}").matcher(p);
+            if (mm.find()) return p.trim();
+        }
+        return stem;
+    }
+
+    /** 生成识别质量提示：画面模糊、选项缺失、题干缺失 */
+    private List<String> qualityWarnings() {
+        List<String> w = new ArrayList<>();
+        if (lastTotalFrames > 0) {
+            int blurry = Math.max(0, lastTotalFrames - lastKeptFrames);
+            w.add("共抽取 " + lastTotalFrames + " 帧，清晰可用 " + lastKeptFrames + " 帧"
+                    + (blurry > 0 ? "，另有 " + blurry + " 帧因画面模糊被丢弃" : ""));
+        }
+        for (Question q : questions) {
+            if (q.sharp > 0 && q.sharp < 1500) {
+                w.add("第 " + q.no + " 题来源画面偏模糊（清晰度 " + Math.round(q.sharp)
+                        + "），建议核对或重拍这一段");
+            }
+            if (q.stem.startsWith("（第")) {
+                w.add("第 " + q.no + " 题只读到选项、没读到题干");
+            }
+            if (q.no >= 21 && q.options.isEmpty() && q.stem.length() > 10
+                    && !q.stem.contains("___") && !q.stem.contains("______")) {
+                w.add("第 " + q.no + " 题没有读到选项");
+            }
+        }
+        return w;
+    }
+
     /** 找出题号区间的空缺，如 41-48 */
     private String findGaps(List<Question> qs) {
         if (qs.size() < 2) return "";
@@ -294,7 +403,12 @@ public class MainActivity extends AppCompatActivity {
                 }
                 String reply = client.chat(
                         "你是英语老师。依据给出的原文作答，只输出 JSON 数组。",
-                        body + "\n请输出 JSON 数组，每项 {\"no\":题号,\"answer\":\"选项字母\",\"reason\":\"一句话中文理由\"}。");
+                        body + "\n输出 JSON 数组，每项 {\"no\":题号,\"answer\":\"...\",\"reason\":\"...\"}。规则：\n"
+                             + "1. 选择题：answer 填选项字母（如 B），reason 填一句中文理由；\n"
+                             + "2. 完形/语法填空：answer 填空格应填的单词，reason 填一句中文理由；\n"
+                             + "3. 写作题（没有选项、题号通常小于 20）：answer 填「范文」，reason 给出"
+                             + "写作思路（一句中文）+ 一篇 80-120 词的英文范文。\n"
+                             + "所有题目都要给，不要漏。");
 
                 JSONArray arr = SolverClient.extractJson(reply);
                 int filled = 0;
@@ -309,10 +423,24 @@ public class MainActivity extends AppCompatActivity {
                         }
                     }
                 }
+                // 作文：逐篇给思路 + 范文
+                essays.clear();
+                for (String w : writings) {
+                    try {
+                        String e = client.chat(
+                                "你是高中英语老师，回答只给正文，不要客套。",
+                                "作文题目：\n" + w + "\n\n请输出：\n第一行：一句中文写作思路；\n"
+                                        + "然后一篇 80-120 词的英文范文。");
+                        essays.add(e.trim());
+                    } catch (Throwable t) {
+                        essays.add("");
+                    }
+                }
+
                 final int f = filled;
                 ui.post(() -> {
                     render();
-                    status("已解出 " + f + " 题");
+                    status("已解出 " + f + " 题" + (writings.isEmpty() ? "" : " · 作文范文 " + essays.size() + " 篇"));
                     setBusy(false);
                 });
             } catch (Throwable e) {
@@ -363,7 +491,8 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
 
-                File f = PdfExporter.export(getFilesDir(), blocks, true);
+                List<String> warn = qualityWarnings();
+                File f = PdfExporter.export(getFilesDir(), blocks, warn, writings, essays, true);
                 lastPdf = f;
                 ui.post(() -> {
                     status("已生成：" + f.getName());

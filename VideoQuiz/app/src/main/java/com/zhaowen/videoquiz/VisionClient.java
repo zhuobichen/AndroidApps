@@ -21,6 +21,7 @@ public class VisionClient {
 
     public static class Result {
         public List<Question> questions = new ArrayList<>();
+        public List<String> writings = new ArrayList<>();
         public String passage = "";
     }
 
@@ -44,7 +45,9 @@ public class VisionClient {
             "1. 只要图里有题号就必须提取，不要因为「没有选项」或「是文章」就跳过；\n" +
             "2. no 必须是数字；\n" +
             "3. passage 只在整页都没有题号时，才填该页正文；\n" +
-            "4. 只输出 JSON，不要解释。";
+            "4. 如果本页是【写作题】（应用文/读后续写，没有题号），把题目原文完整放进 writing 数组；\n" +
+            "5. 只输出 JSON，不要解释。\n" +
+            "完整格式：{\"questions\":[...],\"passage\":\"\",\"writing\":[\"应用文题目原文\",\"读后续写题目原文\"]}";
 
     public Result readFrame(Bitmap bmp) throws Exception {
         // 缩到最长边 1400，压成 JPEG，控制 token
@@ -78,6 +81,13 @@ public class VisionClient {
         android.util.Log.i("VideoQuiz", "replyLen=" + text.length() + " objNull=" + (obj == null));
         if (obj == null) return r;
         r.passage = obj.optString("passage", "");
+        JSONArray wr = obj.optJSONArray("writing");
+        if (wr != null) {
+            for (int i = 0; i < wr.length(); i++) {
+                String s = wr.optString(i, "").trim();
+                if (s.length() > 20) r.writings.add(s);
+            }
+        }
         JSONArray arr = obj.optJSONArray("questions");
         android.util.Log.i("VideoQuiz", "arrNull=" + (arr == null) + " arrLen=" + (arr == null ? -1 : arr.length()));
         if (arr == null) return r;

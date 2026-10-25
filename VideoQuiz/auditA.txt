@@ -1,0 +1,10 @@
+pages=12
+nums=[1, 2, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65]
+count=47
+[36] 36__________. 37. 37__________ Virtual guides can respond in dozens of languages and adjust their tone to suit each listener, whether a young student or a lifelong art lover. 38. 3
+[37] 37__________ Virtual guides can respond in dozens of languages and adjust their tone to suit each listener, whether a young student or a lifelong art lover. 38. 38__________ Moreov
+[40] 40 ________ Strict rules are therefore needed to ensure that every visitor's privacy is fully protected. A. These capabilities make AI a powerful tool for art restoration. B. Visit
+[46] Sure, my friends and I loved to 46 ______ about how bored we were in the middle of nowhere, 47 ______, as I ﬁnish up my junior year of college, I'm convinced that it took 48 ______
+[50] That means that you do more than just talk to your next door neighbors - in a lot of cases, they're truly so 50 ______ of your family. A. advantage B. example C. owner D. extension
+[51] So much of this 51______ revolves around being outside and knowing the ins and outs of the town, being present and mindful of your 52______ is a critical part of the culture. A. li
+quality=True writing=True

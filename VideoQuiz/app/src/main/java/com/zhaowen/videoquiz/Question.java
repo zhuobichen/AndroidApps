@@ -11,6 +11,7 @@ public class Question {
     public String answer = "";
     public String reason = "";
     public int firstFrame = 0;
+    public double sharp = 0;
 
     public String toDisplay() {
         StringBuilder sb = new StringBuilder();

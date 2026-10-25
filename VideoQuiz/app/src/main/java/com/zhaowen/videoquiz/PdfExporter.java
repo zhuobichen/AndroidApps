@@ -62,7 +62,9 @@ public class PdfExporter {
         void finish() { if (page != null) doc.finishPage(page); }
     }
 
-    public static File export(File dir, List<Block> blocks, boolean withAnswers) throws Exception {
+    public static File export(File dir, List<Block> blocks, List<String> warnings,
+                              List<String> writings, List<String> essays,
+                              boolean withAnswers) throws Exception {
         PdfDocument doc = new PdfDocument();
         Pager pg = new Pager(doc);
 
@@ -103,6 +105,28 @@ public class PdfExporter {
                 for (String o : q.options) sb.append("\n    ").append(o);
                 pg.para(sb.toString(), body, 12);
             }
+        }
+
+        if (writings != null && !writings.isEmpty()) {
+            pg.gap(12);
+            pg.para("写作题", title, 10);
+            for (int i = 0; i < writings.size(); i++) {
+                pg.para("作文 " + (i + 1) + "：" + writings.get(i), body, 6);
+                if (essays != null && i < essays.size() && !essays.get(i).isEmpty()) {
+                    pg.para("参考范文：" + essays.get(i), body, 14);
+                }
+            }
+        }
+
+        if (warnings != null && !warnings.isEmpty()) {
+            pg.gap(12);
+            TextPaint warn = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+            warn.setColor(Color.rgb(198, 40, 40));
+            warn.setTextSize(10.5f);
+            warn.setFakeBoldText(true);
+            pg.para("识别质量提示", warn, 8);
+            for (String w : warnings) pg.para("· " + w, body, 4);
+            pg.para("如果是拍摄问题（抖动、反光、没拍全），建议重拍对应段落后再导入。", grey, 12);
         }
 
         if (withAnswers && !all.isEmpty()) {

@@ -1,0 +1,9 @@
+pages=12
+nums=[1, 2, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65]
+[36] 36 ______. 37. 37 ______ Virtual guides can respond in dozens of languages and adjust their tone to suit each listener, whether a young student or a lifelong art lover. 38. 38________ Moreover, it can
+[37] 37 ______ Virtual guides can respond in dozens of languages and adjust their tone to suit each listener, whether a young student or a lifelong art lover. 38. 38________ Moreover, it can predict how a 
+[38] 38________ Moreover, it can predict how a fragile painting may age over the years, allowing experts to step in before any visible damage appears. A. These capabilities make AI a powerful tool for art 
+[39] 39________ For instance, a curious child and a trained art expert standing before the same painting might each receive a completely different guided tour. A. These capabilities make AI a powerful tool
+[40] 40________ Strict rules are therefore needed to ensure that every visitor's privacy is fully protected. A. These capabilities make AI a powerful tool for art restoration. B. Visitor data, if misused, 
+quality=True
+writing=True
