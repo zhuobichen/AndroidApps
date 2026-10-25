@@ -1,0 +1,51 @@
+# ---------- Android / Gradle ----------
+.gradle/
+build/
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+*.iml
+.idea/
+*.hprof
+
+# ---------- 本机环境（绝不能提交） ----------
+/sdk/
+/tools/
+/tmp/
+/emuhome/
+/avd2/
+/dl/
+/build-test/
+/ssh/
+/keystore/
+*.keystore
+*.jks
+*.apk
+*.aab
+
+# ---------- 测试产物与截图 ----------
+/acceptance/
+/retest/
+/review/
+/testershot/
+/bikeretest/
+/icon/
+*.log
+*.out
+*.err
+/*.png
+/*.xml
+/*.json
+/*.sh
+/*.py
+/*.ts
+/*.gpx
+/*.txt
+/prefs*.xml
+
+# ---------- 系统 ----------
+.DS_Store
+Thumbs.db
+# 根目录的旧 SDK 快照（构建走 Maven，未引用）
+/libs/
