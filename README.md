@@ -1,6 +1,33 @@
 # MapMate — 会说话的手机地图
 
 高德地图 + 语音 Agent 的自用导航 App。说一句「导航到广州塔」，它规划路线、画出路线、沿途播报转向。
+## 截图
+
+| 主界面 · 定位箭头 | 导航模式 |
+|---|---|
+| ![主界面](docs/screenshot-main.png) | ![导航模式](docs/screenshot-nav.png) |
+
+| 路线 + 可折叠面板 | 骑行总结（轨迹缩略图） |
+|---|---|
+| ![路线](docs/screenshot-route.png) | ![骑行](docs/screenshot-ride.png) |
+
+| 对话记录 | |
+|---|---|
+| ![对话](docs/screenshot-history.png) | |
+
+## 快速开始
+
+```bash
+# 环境：JDK 21、Android SDK 35、Gradle 8.9
+export JAVA_HOME=/path/to/jdk-21
+export ANDROID_HOME=/path/to/android-sdk
+
+gradle assembleDebug
+# 产物：app/build/outputs/apk/debug/app-debug.apk
+```
+
+首次运行需要在高德开放平台申请 **Android Key**（已在 `AndroidManifest.xml` 中）和 **Web 服务 Key**（`RoutePlanner` / `Geocoder` / `Weather` 共用）。
+Agent 的 DeepSeek Key 在 App 内「菜单 → 设置」里填，不写进代码。
 
 ## 架构
 
