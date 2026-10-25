@@ -33,13 +33,18 @@ public class VisionClient {
     }
 
     private static final String PROMPT =
-            "这是一页试卷的照片。你的任务只有一个：把图中出现的所有【题目】完整抄出来。\n" +
-            "输出 JSON：{\"questions\":[{\"no\":题号,\"stem\":\"题干\",\"options\":[\"A. ...\",\"B. ...\",\"C. ...\",\"D. ...\"]}],\"passage\":\"\"}\n" +
+            "这是一页英语试卷的照片。请把图中出现的所有【带题号的内容】提取出来。\n" +
+            "输出 JSON：{\"questions\":[{\"no\":题号,\"stem\":\"题干\",\"options\":[\"A. ...\",\"B. ...\"]}],\"passage\":\"\"}\n\n" +
+            "本页可能是下面任意一种，都要处理：\n" +
+            "（1）普通选择题：题号 + 题干 + A/B/C/D 选项；\n" +
+            "（2）完形填空正文：文章里出现 __41__、__42__ 这样的带编号空格——每个空格算一道题，stem 取包含该空格的那一整句；\n" +
+            "（3）完形填空选项表：形如「41. A. fantasy  B. prejudice  C. realization  D. expectation」——每一行算一道题，options 填 A-D，stem 留空；\n" +
+            "（4）语法填空：正文里带编号的空格，后面括号里给了提示词（如 62___(Draw)）——每个空格算一道题，stem 取包含该空格的句子，options 留空数组。\n\n" +
             "规则：\n" +
-            "1. questions 是重点，务必把本页每道题的题干和全部选项都抄全；\n" +
-            "2. no 填数字题号（如 24）；\n" +
-            "3. passage 只有在【本页没有题目、只有文章正文】时才填正文，否则一律空字符串；\n" +
-            "4. 只输出 JSON，不要解释；本页没有题目就返回 {\"questions\":[],\"passage\":\"该页正文\"}。";
+            "1. 只要图里有题号就必须提取，不要因为「没有选项」或「是文章」就跳过；\n" +
+            "2. no 必须是数字；\n" +
+            "3. passage 只在整页都没有题号时，才填该页正文；\n" +
+            "4. 只输出 JSON，不要解释。";
 
     public Result readFrame(Bitmap bmp) throws Exception {
         // 缩到最长边 1400，压成 JPEG，控制 token
@@ -88,7 +93,17 @@ public class VisionClient {
                     if (!s.isEmpty()) q.options.add(s);
                 }
             }
-            if (q.no > 0 && !q.stem.isEmpty()) r.questions.add(q);
+            // 听力原文的对话行（M: / W: 开头）不是题目，丢掉
+            String st = q.stem.trim();
+            String firstLine = st.split("\\r?\\n")[0].trim();
+            // 听力原文的对话行（M: / W: 开头）不是题目，丢掉
+            boolean isDialogue = firstLine.length() > 1
+                    && (firstLine.charAt(0) == 'M' || firstLine.charAt(0) == 'W')
+                    && (firstLine.charAt(1) == ':' || firstLine.charAt(1) == '：');
+            if (isDialogue) continue;
+            // 完形选项表只有选项没有题干，也要保留
+            boolean noOk = q.no >= 1 && q.no <= 200 && !(q.no >= 2000);
+            if (noOk && (!q.stem.isEmpty() || q.options.size() >= 2)) r.questions.add(q);
         }
         return r;
     }

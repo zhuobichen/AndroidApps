@@ -144,9 +144,10 @@ public class MainActivity extends AppCompatActivity {
                             if (old == null) {
                                 map.put(q.no, q);
                                 newOne = true;
-                            } else if (q.options.size() > old.options.size()
-                                    || q.stem.length() > old.stem.length()) {
-                                map.put(q.no, q);
+                            } else {
+                                // 题干取更长的，选项取更多的，两者合并而不是整体替换
+                                if (q.stem.length() > old.stem.length()) old.stem = q.stem;
+                                if (q.options.size() > old.options.size()) old.options = q.options;
                             }
                         }
                         if (r.passage != null && !r.passage.trim().isEmpty()) {
@@ -169,6 +170,11 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }, (d, t) -> {});
 
+                // 完形选项表可能没有题干，补占位，避免 PDF 里空着
+                for (Question q : map.values()) {
+                    if (q.stem.isEmpty()) q.stem = "（第 " + q.no + " 题，题干见原文）";
+                }
+
                 List<Question> sorted = new ArrayList<>(map.values());
                 sorted.sort((a, b) -> Integer.compare(a.no, b.no));
 
@@ -181,7 +187,9 @@ public class MainActivity extends AppCompatActivity {
                         status("识别失败");
                     } else {
                         render();
-                        status("识别到 " + sorted.size() + " 题（读了 " + kept + " 个清晰帧）");
+                        String gaps = findGaps(sorted);
+                        status("识别到 " + sorted.size() + " 题（读了 " + kept + " 个清晰帧）"
+                                + (gaps.isEmpty() ? "" : " · 缺题 " + gaps + "（可能不在视频里）"));
                     }
                     setBusy(false);
                 });
@@ -190,6 +198,26 @@ public class MainActivity extends AppCompatActivity {
                 setBusy(false);
             }
         }).start();
+    }
+
+    /** 找出题号区间的空缺，如 41-48 */
+    private String findGaps(List<Question> qs) {
+        if (qs.size() < 2) return "";
+        java.util.TreeSet<Integer> have = new java.util.TreeSet<>();
+        for (Question q : qs) have.add(q.no);
+        int lo = 1, hi = have.last();
+        StringBuilder sb = new StringBuilder();
+        int start = -1;
+        for (int n = lo; n <= hi + 1; n++) {
+            boolean missing = (n <= hi) && !have.contains(n);
+            if (missing && start < 0) start = n;
+            if (!missing && start >= 0) {
+                if (sb.length() > 0) sb.append("、");
+                sb.append(start == n - 1 ? String.valueOf(start) : start + "-" + (n - 1));
+                start = -1;
+            }
+        }
+        return sb.toString();
     }
 
     private void render() {
