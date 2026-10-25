@@ -242,8 +242,11 @@ public class MainActivity extends AppCompatActivity {
                     } else {
                         render();
                         String gaps = findGaps(sorted);
+                        List<String> conf = confidenceReport();
+                        String head = conf.isEmpty() ? "" : " · 置信度 " + conf.get(0).replace("识别置信度：", "");
                         status("识别到 " + sorted.size() + " 题（读了 " + kept + " 个清晰帧）"
-                                + (gaps.isEmpty() ? "" : " · 缺题 " + gaps + "（可能不在视频里）"));
+                                + (gaps.isEmpty() ? "" : " · 缺题 " + gaps + "（可能不在视频里）")
+                                + head);
                     }
                     setBusy(false);
                 });
@@ -330,6 +333,57 @@ public class MainActivity extends AppCompatActivity {
             if (mm.find()) return p.trim();
         }
         return stem;
+    }
+
+    private static double clamp100(double v) {
+        return Math.max(0, Math.min(100, v));
+    }
+
+    /** 整体置信度：清晰度 35% + 覆盖 30% + 完整度 25% + 帧质量 10% */
+    private List<String> confidenceReport() {
+        List<String> out = new ArrayList<>();
+        if (questions.isEmpty()) return out;
+
+        List<Double> sh = new ArrayList<>();
+        for (Question q : questions) if (q.sharp > 0) sh.add(q.sharp);
+        java.util.Collections.sort(sh);
+        double med = sh.isEmpty() ? 0 : sh.get(sh.size() / 2);
+        double sharpScore = clamp100((med - 300) / (2500 - 300) * 100);
+
+        java.util.TreeSet<Integer> have = new java.util.TreeSet<>();
+        for (Question q : questions) have.add(q.no);
+        int lo = have.first(), hi = have.last();
+        int span = Math.max(1, hi - lo + 1);
+        double coverage = clamp100(have.size() * 100.0 / span);
+
+        int ok = 0;
+        StringBuilder bad = new StringBuilder();
+        for (Question q : questions) {
+            String s = q.stem == null ? "" : q.stem.trim();
+            boolean hasStem = !s.startsWith("（第") && s.length() >= 25
+                    && !s.matches("^\\d*\\s*_{2,}\\s*\\.?$");
+            boolean hasBody = q.options.size() >= 2 || s.contains("___");
+            if (hasStem && hasBody) ok++;
+            else if (bad.length() < 60) bad.append(bad.length() > 0 ? "、" : "").append(q.no);
+        }
+        double complete = clamp100(ok * 100.0 / questions.size());
+        double frameScore = lastTotalFrames > 0
+                ? clamp100(lastKeptFrames * 100.0 / lastTotalFrames) : 100;
+
+        double base = 0.30 * sharpScore + 0.25 * coverage + 0.35 * complete + 0.10 * frameScore;
+        int incomplete = questions.size() - ok;
+        double total = clamp100(base - 2.0 * incomplete);   // 每题不完整扣 2 分
+        String grade = total >= 95 ? "优" : total >= 85 ? "良" : total >= 70 ? "一般" : "较差";
+        out.add("识别置信度：" + Math.round(total) + "/100（" + grade + "）");
+        out.add("画面清晰度 " + Math.round(sharpScore) + "/100（题目来源帧中位清晰度 "
+                + Math.round(med) + "）");
+        out.add("题目完整度 " + Math.round(complete) + "/100（" + questions.size()
+                + " 题里 " + ok + " 题题干与选项齐全" + (bad.length() > 0 ? "；不完整：" + bad : "") + "）");
+        out.add("覆盖完整度 " + Math.round(coverage) + "/100（" + lo + "-" + hi
+                + " 区间实到 " + have.size() + " 题）");
+        out.add("帧质量 " + Math.round(frameScore) + "/100（" + lastKeptFrames + "/"
+                + lastTotalFrames + " 帧可用）");
+        return out;
     }
 
     /** 生成识别质量提示：画面模糊、选项缺失、题干缺失 */
@@ -492,7 +546,8 @@ public class MainActivity extends AppCompatActivity {
                 }
 
                 List<String> warn = qualityWarnings();
-                File f = PdfExporter.export(getFilesDir(), blocks, warn, writings, essays, true);
+                List<String> conf = confidenceReport();
+                File f = PdfExporter.export(getFilesDir(), blocks, warn, writings, essays, conf, true);
                 lastPdf = f;
                 ui.post(() -> {
                     status("已生成：" + f.getName());

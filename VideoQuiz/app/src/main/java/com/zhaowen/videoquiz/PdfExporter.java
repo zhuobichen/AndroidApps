@@ -64,7 +64,7 @@ public class PdfExporter {
 
     public static File export(File dir, List<Block> blocks, List<String> warnings,
                               List<String> writings, List<String> essays,
-                              boolean withAnswers) throws Exception {
+                              List<String> confidence, boolean withAnswers) throws Exception {
         PdfDocument doc = new PdfDocument();
         Pager pg = new Pager(doc);
 
@@ -89,7 +89,17 @@ public class PdfExporter {
         pg.cv.drawText("试卷原文与答案", M, pg.y, title);
         pg.y += 16;
         pg.cv.drawText("由 VideoQuiz 从录像自动生成", M, pg.y, grey);
-        pg.y += 26;
+        pg.y += 20;
+
+        if (confidence != null && !confidence.isEmpty()) {
+            TextPaint conf = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+            conf.setColor(Color.rgb(26, 115, 232));
+            conf.setTextSize(10.5f);
+            conf.setFakeBoldText(true);
+            pg.para(confidence.get(0), conf, 6);
+            for (int i = 1; i < confidence.size(); i++) pg.para("· " + confidence.get(i), grey, 3);
+        }
+        pg.gap(10);
 
         List<Question> all = new ArrayList<>();
         for (Block b : blocks) all.addAll(b.questions);
@@ -111,9 +121,16 @@ public class PdfExporter {
             pg.gap(12);
             pg.para("写作题", title, 10);
             for (int i = 0; i < writings.size(); i++) {
-                pg.para("作文 " + (i + 1) + "：" + writings.get(i), body, 6);
+                pg.para("作文 " + (i + 1) + "：" + writings.get(i), body, 8);
                 if (essays != null && i < essays.size() && !essays.get(i).isEmpty()) {
-                    pg.para("参考范文：" + essays.get(i), body, 14);
+                    String raw = essays.get(i).trim();
+                    int cut = raw.indexOf('\n');
+                    if (cut < 0) cut = raw.indexOf('。');
+                    String idea = cut > 0 ? raw.substring(0, cut + 1).trim() : "";
+                    String essay = cut > 0 ? raw.substring(Math.min(raw.length(), cut + 1)).trim() : raw;
+                    if (!idea.isEmpty()) pg.para("【写作思路】" + idea, grey, 6);
+                    pg.para("【参考范文·不是唯一答案】", label, 4);
+                    pg.para(essay, body, 16);
                 }
             }
         }

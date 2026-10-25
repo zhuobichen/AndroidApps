@@ -1,0 +1,27 @@
+pages=12
+--- 抬头 ---
+试卷原⽂与答案
+由 VideoQuiz 从录像⾃动⽣成
+识别置信度：99/100（优）
+· 画⾯清晰度 98/100（题⽬来源帧中位清晰度 2451）
+· 题⽬完整度 98/100（45 题⾥ 44 题题⼲与选项⻬全；不完整：36）
+· 覆盖完整度 100/100（21-65 区间实到 45 题）
+· 帧质量 100/100（56/56 帧可⽤）
+【原⽂】
+Los Angeles is famously known for its sun, surf and celebrities, but the city's rich history in sports is the cherry on top.
+Since its opening in 2020, SoFi Stadium has continued to set the standard for the fan experience.
+SoFi Stadium is the home venue for both the Los Angeles Rams and the Los Angeles Chargers, with the Rams
+playing the most home games here each season. It also hosts the annual LA Bowl and, in 2026,
+--- 写作题 ---
+写作题
+作⽂ 1：阅读下⾯材料，根据其内容和所给段落开头语续写⼀段英⽂，使之构成⼀篇完整的短⽂。Hailey Slovik of
+Detroit said she's learned a valuable lesson about winter driving. The 27-year-old was one of dozens - possibly
+hundreds - of people who found themselves marooned in Chatham-Kent trapped by a ﬁerce winter storm Dec. 23.
+The just-in-time-for-Christmas blizzard saw Mayor Darrin Canniff declare a state of emergency and the closure of both
+Highway 401 and Highway 40, as ﬁrst responders and snow plow operators grappled with drifting snow in whiteout
+conditions. The extreme weather event saw local residents and business owners open their doors to the stranded,
+and many travellers were also welcomed to emergency shelters at schools, churches, arenas and even Chatham's
+Wal-Mart. On her way to Toronto to visit her boyfriend and meet his family for the ﬁrst time, Slovik set out in the
+afternoon. She heard there was a storm coming, bu
+--- 36 ---
+36 ______. 37. 37 ______ Virtual guides can respond in dozens of languages and adjust their tone to suit each listener, whether a young student or a lifelong ar

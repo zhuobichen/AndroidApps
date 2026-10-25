@@ -1,0 +1,11 @@
+试卷原⽂与答案
+由 VideoQuiz 从录像⾃动⽣成
+识别置信度：88/100（良）
+· 画⾯清晰度 98/100（题⽬来源帧中位清晰度 2451）
+· 题⽬完整度 91/100（45 题⾥ 41 题题⼲与选项⻬全；不完整：36、37、38、39）
+· 覆盖完整度 100/100（21-65 区间实到 45 题）
+· 帧质量 100/100（56/56 帧可⽤）
+【原⽂】
+Los Angeles is famously known for its sun, surf and celebrities, but the city's rich history in sports is the cherry on top.
+Since its opening in 2020, SoFi Stadium has continued to set the standard for the fan experience.
+SoFi Stadium is the home venue for both the Los Angeles Rams and the Los Angeles Charger
