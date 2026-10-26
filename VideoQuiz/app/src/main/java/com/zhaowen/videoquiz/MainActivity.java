@@ -235,18 +235,8 @@ public class MainActivity extends AppCompatActivity {
                         for (Map.Entry<String, Integer> e : sv.entrySet()) {
                             if (e.getValue() > bestV) { bestV = e.getValue(); best = e.getKey(); }
                         }
-                        // 解答题（15-19）优先「小问最全」的版本：先数 (1)(2) 个数，再比长度
-                        String best2 = best;
-                        int bestScore = -1;
-                        for (String k : sv.keySet()) {
-                            int subs = 0;
-                            java.util.regex.Matcher mm = java.util.regex.Pattern
-                                    .compile("\\(\\d\\)").matcher(k);
-                            while (mm.find()) subs++;
-                            int score = subs * 100000 + k.length();
-                            if (score > bestScore) { bestScore = score; best2 = k; }
-                        }
-                        q.stem = stemText.get(no).get(best2);
+                        // 取出现次数最多的版本（宁缺勿错：不做跨版本拼接）
+                        q.stem = stemText.get(no).get(best);
                     }
                     // 选项优先取「题干所在帧」的，避免串到别的题
                     boolean got = false;
@@ -535,6 +525,29 @@ public class MainActivity extends AppCompatActivity {
         out.add("帧质量 " + Math.round(frameScore) + "/100（" + lastKeptFrames + "/"
                 + lastTotalFrames + " 帧可用）");
         return out;
+    }
+
+    /** 题干里是否出现了别的题号（粘题检测） */
+    private static boolean hasOtherNumber(String s, int self) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?m)(^|\\s)(\\d{1,2})\\s*[.、．]").matcher(s);
+        while (m.find()) {
+            int n = Integer.parseInt(m.group(2));
+            if (n >= 1 && n <= 99 && n != self) return true;
+        }
+        return false;
+    }
+
+    /** 去掉空格和 $ 后比较，避免 LaTeX 排版差异导致「同一题」判不出来 */
+    private static String normStem(String s) {
+        return s.replaceAll("[\\s$]", "");
+    }
+
+    private static int countSubs(String s) {
+        int n = 0;
+        java.util.regex.Matcher mm = java.util.regex.Pattern.compile("\\(\\d\\)").matcher(s);
+        while (mm.find()) n++;
+        return n;
     }
 
     /** 生成识别质量提示：画面模糊、选项缺失、题干缺失 */

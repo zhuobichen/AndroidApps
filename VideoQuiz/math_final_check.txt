@@ -1,0 +1,7 @@
+pages=3
+
+[1] 样本数据6,8,4,5,12的中位数为（） A. 5 B. 6 C. 8 D. 9 2. 已知平⾯向量$\vec{a}$，$\vec{b}$不共线，且$2\vec{a}+y\vec{b}=x\vec{a}-3\vec{b}$，则（） A. $x=2,y=-3$ B. $x=-2,y=3$ C. $x=2,y=3$ D. $x=-2,y=-3$ 3. 已知集合$A=\{\sin\frac{7\pi}{6},\cos\frac{5\pi}{3},\tan\frac{5\pi}{4}\}$，$B=\{-\frac{\sqrt{3}}{2
+
+[18] 已知椭圆 $C: \frac{x^2}{a^2} + \frac{y^2}{b^2} = 1 (a > b > 0)$ 的左焦点为 $F(-1, 0)$，离⼼率为 $\frac{1}{2}$。 19. 已知函数 $f(x)$ 的定义域为 $\mathbb{R}$，且当 $x < 0$ 时，$f(x) = 2^x$。对任意 $x_0 \in \mathbb{R}$，定义 集合 $D(x_0) = \{d \in \mathbb{R} \mid f(x_0 + d) > f(x_0)\}$。 
+
+[19] 已知函数 $f(x)$ 的定义域为 $\mathbb{R}$，且当 $x < 0$ 时，$f(x) = 2^x$。对任意 $x_0 \in \mathbb{R}$，定义 集合 $D(x_0) = \{d \in \mathbb{R} \mid f(x_0 + d) > f(x_0)\}$。 
