@@ -615,51 +615,26 @@ public class MainActivity extends AppCompatActivity {
 
     private void makePdf() {
         if (questions.isEmpty()) return;
+        boolean answered = false;
+        for (Question q : questions) if (!q.answer.isEmpty()) { answered = true; break; }
+        if (!answered) {
+            status("先点「解题」，再导出（答案会是空的）");
+            return;
+        }
         setBusy(true);
-        status("正在生成 PDF…");
+        status("正在生成两份 PDF…");
         new Thread(() -> {
             try {
-                // 按视频顺序把「原文段落」和「题目」排成时间线，
-                // 连续段落合并成一块，题目单独成块
-                List<Object[]> events = new ArrayList<>();
-                for (Para p : paras) events.add(new Object[]{p.frame, 0, p.text});
-                for (Question q : questions) events.add(new Object[]{q.firstFrame, 1, q});
-                events.sort((a, b) -> {
-                    int fa = (int) a[0], fb = (int) b[0];
-                    if (fa != fb) return Integer.compare(fa, fb);
-                    return Integer.compare((int) a[1], (int) b[1]);
-                });
-
-                List<PdfExporter.Block> blocks = new ArrayList<>();
-                PdfExporter.Block cur = null;
-                for (Object[] e : events) {
-                    int kind = (int) e[1];
-                    if (kind == 0) {
-                        if (cur == null || !cur.questions.isEmpty()) {
-                            cur = new PdfExporter.Block();
-                            cur.frame = (int) e[0];
-                            blocks.add(cur);
-                        }
-                        String t = (String) e[2];
-                        cur.passage = cur.passage == null ? t : cur.passage + "\n\n" + t;
-                    } else {
-                        if (cur == null || cur.passage != null) {
-                            cur = new PdfExporter.Block();
-                            cur.frame = (int) e[0];
-                            blocks.add(cur);
-                        }
-                        cur.questions.add((Question) e[2]);
-                    }
-                }
-
+                List<PdfExporter.Block> blocks = buildBlocks();
                 List<String> warn = qualityWarnings();
                 List<String> conf = confidenceReport();
-                File f = PdfExporter.export(getFilesDir(), blocks, warn, writings, essays, conf, true);
-                lastPdf = f;
+                File paper = PdfExporter.exportPaper(getFilesDir(), blocks, warn, writings, conf);
+                File answers = PdfExporter.exportAnswers(getFilesDir(), questions, writings, essays);
+                lastPdf = paper;
                 ui.post(() -> {
-                    status("已生成：" + f.getName());
+                    status("已生成：" + paper.getName() + " 和 " + answers.getName());
                     setBusy(false);
-                    sharePdf(f);
+                    sharePdfs(paper, answers);
                 });
             } catch (Throwable e) {
                 status("生成失败：" + e.getMessage());
@@ -668,6 +643,57 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 
+    /** 按视频顺序把「原文段落」和「题目」排成时间线 */
+    private List<PdfExporter.Block> buildBlocks() {
+        List<Object[]> events = new ArrayList<>();
+        for (Para p : paras) events.add(new Object[]{p.frame, 0, p.text});
+        for (Question q : questions) events.add(new Object[]{q.firstFrame, 1, q});
+        events.sort((a, b) -> {
+            int fa = (int) a[0], fb = (int) b[0];
+            if (fa != fb) return Integer.compare(fa, fb);
+            return Integer.compare((int) a[1], (int) b[1]);
+        });
+
+        List<PdfExporter.Block> blocks = new ArrayList<>();
+        PdfExporter.Block cur = null;
+        for (Object[] e : events) {
+            int kind = (int) e[1];
+            if (kind == 0) {
+                if (cur == null || !cur.questions.isEmpty()) {
+                    cur = new PdfExporter.Block();
+                    cur.frame = (int) e[0];
+                    blocks.add(cur);
+                }
+                String t = (String) e[2];
+                cur.passage = cur.passage == null ? t : cur.passage + "\n\n" + t;
+            } else {
+                if (cur == null || cur.passage != null) {
+                    cur = new PdfExporter.Block();
+                    cur.frame = (int) e[0];
+                    blocks.add(cur);
+                }
+                cur.questions.add((Question) e[2]);
+            }
+        }
+        return blocks;
+    }
+
+    private void sharePdfs(File paper, File answers) {
+        try {
+            Uri u1 = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", paper);
+            Uri u2 = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", answers);
+            Intent i = new Intent(Intent.ACTION_SEND_MULTIPLE);
+            i.setType("application/pdf");
+            ArrayList<Uri> list = new ArrayList<>();
+            list.add(u1);
+            list.add(u2);
+            i.putParcelableArrayListExtra(Intent.EXTRA_STREAM, list);
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(i, "分享试卷和答案"));
+        } catch (Throwable e) {
+            Toast.makeText(this, "分享失败：" + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
     private void sharePdf(File f) {
         try {
             Uri u = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", f);

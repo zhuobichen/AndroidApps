@@ -12,7 +12,7 @@ import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 生成 A4 PDF：按视频顺序排出「原文 → 题目」，最后附答案。 */
+/** 生成两份 PDF：试卷（原文+题目）、参考答案（答案+作文范文）。 */
 public class PdfExporter {
 
     private static final int W = 595, H = 842, M = 44;
@@ -23,7 +23,6 @@ public class PdfExporter {
         public List<Question> questions = new ArrayList<>();
     }
 
-    /** 负责分页、落笔 */
     private static class Pager {
         final PdfDocument doc;
         PdfDocument.Page page;
@@ -62,59 +61,88 @@ public class PdfExporter {
         void finish() { if (page != null) doc.finishPage(page); }
     }
 
-    public static File export(File dir, List<Block> blocks, List<String> warnings,
-                              List<String> writings, List<String> essays,
-                              List<String> confidence, boolean withAnswers) throws Exception {
+    private static TextPaint paint(float size, int color, boolean bold) {
+        TextPaint p = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+        p.setColor(color);
+        p.setTextSize(size);
+        p.setFakeBoldText(bold);
+        return p;
+    }
+
+    /** 试卷：置信度 + 原文 + 题目 + 写作题（不含答案） */
+    public static File exportPaper(File dir, List<Block> blocks, List<String> warnings,
+                                   List<String> writings, List<String> confidence) throws Exception {
         PdfDocument doc = new PdfDocument();
         Pager pg = new Pager(doc);
 
-        TextPaint title = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-        title.setColor(Color.BLACK);
-        title.setTextSize(18f);
-        title.setFakeBoldText(true);
+        TextPaint title = paint(18f, Color.BLACK, true);
+        TextPaint body = paint(10.5f, Color.BLACK, false);
+        TextPaint label = paint(11.5f, Color.rgb(26, 115, 232), true);
+        TextPaint grey = paint(9f, Color.rgb(90, 90, 90), false);
 
-        TextPaint body = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-        body.setColor(Color.BLACK);
-        body.setTextSize(10.5f);
-
-        TextPaint label = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-        label.setColor(Color.rgb(26, 115, 232));
-        label.setTextSize(11.5f);
-        label.setFakeBoldText(true);
-
-        TextPaint grey = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-        grey.setColor(Color.rgb(90, 90, 90));
-        grey.setTextSize(9f);
-
-        pg.cv.drawText("试卷原文与答案", M, pg.y, title);
+        pg.cv.drawText("试卷", M, pg.y, title);
         pg.y += 16;
         pg.cv.drawText("由 VideoQuiz 从录像自动生成", M, pg.y, grey);
-        pg.y += 20;
+        pg.y += 18;
 
         if (confidence != null && !confidence.isEmpty()) {
-            TextPaint conf = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-            conf.setColor(Color.rgb(26, 115, 232));
-            conf.setTextSize(10.5f);
-            conf.setFakeBoldText(true);
-            pg.para(confidence.get(0), conf, 6);
-            for (int i = 1; i < confidence.size(); i++) pg.para("· " + confidence.get(i), grey, 3);
+            pg.para(confidence.get(0), paint(10.5f, Color.rgb(26, 115, 232), true), 5);
+            for (int i = 1; i < confidence.size(); i++) pg.para("· " + confidence.get(i), grey, 2);
         }
-        pg.gap(10);
-
-        List<Question> all = new ArrayList<>();
-        for (Block b : blocks) all.addAll(b.questions);
+        pg.gap(8);
 
         for (Block b : blocks) {
             if (b.passage != null && !b.passage.trim().isEmpty()) {
-                pg.para("【原文】", label, 6);
-                pg.para(b.passage.trim(), body, 14);
+                pg.para("【原文】", label, 5);
+                pg.para(b.passage.trim(), body, 12);
             }
             for (Question q : b.questions) {
                 StringBuilder sb = new StringBuilder();
                 sb.append(q.no).append(". ").append(q.stem);
                 for (String o : q.options) sb.append("\n    ").append(o);
-                pg.para(sb.toString(), body, 12);
+                pg.para(sb.toString(), body, 11);
             }
+        }
+
+        if (writings != null && !writings.isEmpty()) {
+            pg.gap(10);
+            pg.para("写作题", title, 10);
+            for (int i = 0; i < writings.size(); i++) {
+                pg.para("作文 " + (i + 1) + "：" + writings.get(i), body, 10);
+            }
+        }
+
+        if (warnings != null && !warnings.isEmpty()) {
+            pg.gap(10);
+            pg.para("识别质量提示", paint(10.5f, Color.rgb(198, 40, 40), true), 6);
+            for (String w : warnings) pg.para("· " + w, body, 3);
+            pg.para("如果是拍摄问题（抖动、反光、没拍全），建议重拍对应段落后再导入。", grey, 8);
+        }
+
+        pg.finish();
+        return save(doc, dir, "试卷-");
+    }
+
+    /** 参考答案：逐题答案 + 写作思路与范文 */
+    public static File exportAnswers(File dir, List<Question> questions,
+                                     List<String> writings, List<String> essays) throws Exception {
+        PdfDocument doc = new PdfDocument();
+        Pager pg = new Pager(doc);
+
+        TextPaint title = paint(18f, Color.BLACK, true);
+        TextPaint body = paint(10.5f, Color.BLACK, false);
+        TextPaint label = paint(11.5f, Color.rgb(26, 115, 232), true);
+        TextPaint grey = paint(9f, Color.rgb(90, 90, 90), false);
+
+        pg.cv.drawText("参考答案", M, pg.y, title);
+        pg.y += 16;
+        pg.cv.drawText("由 VideoQuiz 生成，仅供参考", M, pg.y, grey);
+        pg.y += 26;
+
+        for (Question q : questions) {
+            String s = q.no + ". " + q.answer
+                    + (q.reason == null || q.reason.isEmpty() ? "" : "　" + q.reason);
+            pg.para(s, body, 5);
         }
 
         if (writings != null && !writings.isEmpty()) {
@@ -128,35 +156,19 @@ public class PdfExporter {
                     if (cut < 0) cut = raw.indexOf('。');
                     String idea = cut > 0 ? raw.substring(0, cut + 1).trim() : "";
                     String essay = cut > 0 ? raw.substring(Math.min(raw.length(), cut + 1)).trim() : raw;
-                    if (!idea.isEmpty()) pg.para("【写作思路】" + idea, grey, 6);
+                    if (!idea.isEmpty()) pg.para("【写作思路】" + idea, grey, 5);
                     pg.para("【参考范文·不是唯一答案】", label, 4);
-                    pg.para(essay, body, 16);
+                    pg.para(essay, body, 14);
                 }
             }
         }
 
-        if (warnings != null && !warnings.isEmpty()) {
-            pg.gap(12);
-            TextPaint warn = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-            warn.setColor(Color.rgb(198, 40, 40));
-            warn.setTextSize(10.5f);
-            warn.setFakeBoldText(true);
-            pg.para("识别质量提示", warn, 8);
-            for (String w : warnings) pg.para("· " + w, body, 4);
-            pg.para("如果是拍摄问题（抖动、反光、没拍全），建议重拍对应段落后再导入。", grey, 12);
-        }
-
-        if (withAnswers && !all.isEmpty()) {
-            pg.gap(10);
-            pg.para("参考答案", title, 14);
-            for (Question q : all) {
-                String s = q.no + ". " + q.answer + (q.reason.isEmpty() ? "" : "　" + q.reason);
-                pg.para(s, body, 6);
-            }
-        }
-
         pg.finish();
-        File out = new File(dir, "VideoQuiz-" + System.currentTimeMillis() + ".pdf");
+        return save(doc, dir, "答案-");
+    }
+
+    private static File save(PdfDocument doc, File dir, String prefix) throws Exception {
+        File out = new File(dir, prefix + System.currentTimeMillis() + ".pdf");
         try (FileOutputStream fos = new FileOutputStream(out)) {
             doc.writeTo(fos);
         }
