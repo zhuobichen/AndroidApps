@@ -1,0 +1,11 @@
+pages=13
+
+[36] Museums, once silent halls of the past, are now using artiﬁcial intelligence (AI) in surprising ways. Walk into many modern galleries today and an AI-powered guide can chat with you, answer your questions, and share fascinating stories about the works on display. 36__________. 37. The ways
+
+[37] The ways in which AI assists visitors are truly surprising. 37__________ Virtual guides can respond in dozens of languages and adjust their tone to suit each listener, whether a young student or a lifelong art lover. 【原⽂】 AI can also examine artworks in ﬁne detail, far beyond what is possi
+
+[38] AI can also examine artworks in ﬁne detail, far beyond what is possible with human eyes. 38__________ Moreover, it can predict how a fragile painting may age over the years, allowing experts to step in before any visible damage appears. A. These capabilities make AI a powerful tool for art
+
+[39] Beyond preservation, AI creates tailored experiences for individual visitors and their families. 39__________ For instance, a curious child and a trained art expert standing before the same painting might each receive a completely different guided tour. A. These capabilities make AI a powe
+
+[40] Yet the growing use of AI also raises concerns. These systems depend on collecting vast amounts of personal information through their data-driven algorithms. 40__________ Strict rules are therefore needed to ensure that every visitor's privacy is fully protected. A. These capabilities make

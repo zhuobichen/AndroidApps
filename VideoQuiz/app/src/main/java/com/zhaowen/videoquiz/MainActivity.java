@@ -141,6 +141,7 @@ public class MainActivity extends AppCompatActivity {
                 final Map<Integer, Map<String, List<String>>> optList = new java.util.HashMap<>();
                 final Map<Integer, Map<String, Integer>> stemFrame = new java.util.HashMap<>();
                 final Map<Integer, Map<Integer, List<String>>> optByFrame = new java.util.HashMap<>();
+                final Map<Integer, String> blankBest = new java.util.HashMap<>();
                 final float[][] lastFp = {null};
                 final int[] totalFrames = {0};
 
@@ -165,6 +166,13 @@ public class MainActivity extends AppCompatActivity {
                             q.firstFrame = idx;
                             q.sharp = sharp;
                             seen.add(q.no);
+                            if (q.blankSentence != null && q.blankSentence.length() > 20
+                                    && q.blankSentence.matches("(?s).*\\b" + q.no + "\\s*_{2,}.*")) {
+                                String oldB = blankBest.get(q.no);
+                                if (oldB == null || q.blankSentence.length() > oldB.length()) {
+                                    blankBest.put(q.no, q.blankSentence);
+                                }
+                            }
                             // 题干单独投票（空题干不参与）
                             String ns = q.stem.replaceAll("\\s+", " ").trim();
                             if (!ns.isEmpty()) {
@@ -300,6 +308,14 @@ public class MainActivity extends AppCompatActivity {
 
                 lastTotalFrames = totalFrames[0];
                 lastKeptFrames = kept;
+
+                // 空格题：优先用模型返回的 blank_sentence（含空前空后），它比拼接更可靠
+                for (Map.Entry<Integer, String> e : blankBest.entrySet()) {
+                    Question q = map.get(e.getKey());
+                    if (q == null) continue;
+                    String s = e.getValue().replaceAll("\\s+", " ").trim();
+                    if (s.matches("(?s).*\\b" + e.getKey() + "\\s*_{2,}.*")) q.stem = s;
+                }
 
                 // 收尾再清一遍题干：去掉串入的「【原文】」和后续内容
                 for (Question q : map.values()) {
@@ -530,7 +546,9 @@ public class MainActivity extends AppCompatActivity {
             if (q.stem.startsWith("（第")) {
                 w.add("第 " + q.no + " 题只读到选项、没读到题干");
             }
-            if (q.no >= 21 && q.options.isEmpty() && q.stem.length() > 10) {
+            // 只有「应该带选项」的题才提示：21-35 阅读、41-55 完形
+            boolean shouldHaveOptions = (q.no >= 21 && q.no <= 35) || (q.no >= 41 && q.no <= 55);
+            if (shouldHaveOptions && q.options.isEmpty() && q.stem.length() > 10) {
                 w.add("第 " + q.no + " 题没有读到选项");
             }
         }

@@ -47,7 +47,8 @@ public class VisionClient {
             "3. passage 填本页的【文章正文】（可以是空的）；本页即使也有题目，也要把正文抄进 passage；但不要把题目、选项写进 passage；\n" +
             "3b. passage 必须是【逐字抄录】：不要改写、概括、翻译、补全；看不清的词照抄形状或用 […] 标记；段落之间用 \\n\\n 分隔；\n" +
             "4. 如果本页是【写作题】（应用文/读后续写，没有题号），把题目原文完整放进 writing 数组；\n" +
-            "5. 只输出 JSON，不要解释。\n" +
+            "5. 空格题（如 36-40）必须额外返回 blank_sentence：该空所在的完整句子，要同时包含空前面和空后面的内容，逐字抄录原文，不得改写；\n" +
+            "6. 只输出 JSON，不要解释。\n" +
             "完整格式：{\"questions\":[...],\"passage\":\"\",\"writing\":[\"应用文题目原文\",\"读后续写题目原文\"]}";
 
     public Result readFrame(Bitmap bmp) throws Exception {
@@ -97,6 +98,7 @@ public class VisionClient {
             Question q = new Question();
             q.no = toInt(o.opt("no"));
             q.stem = o.optString("stem", "").trim();
+            q.blankSentence = o.optString("blank_sentence", "").trim();
             JSONArray ops = o.optJSONArray("options");
             if (ops != null) {
                 for (int j = 0; j < ops.length(); j++) {
