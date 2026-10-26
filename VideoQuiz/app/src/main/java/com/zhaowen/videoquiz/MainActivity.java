@@ -235,7 +235,18 @@ public class MainActivity extends AppCompatActivity {
                         for (Map.Entry<String, Integer> e : sv.entrySet()) {
                             if (e.getValue() > bestV) { bestV = e.getValue(); best = e.getKey(); }
                         }
-                        q.stem = stemText.get(no).get(best);
+                        // 解答题（15-19）优先「小问最全」的版本：先数 (1)(2) 个数，再比长度
+                        String best2 = best;
+                        int bestScore = -1;
+                        for (String k : sv.keySet()) {
+                            int subs = 0;
+                            java.util.regex.Matcher mm = java.util.regex.Pattern
+                                    .compile("\\(\\d\\)").matcher(k);
+                            while (mm.find()) subs++;
+                            int score = subs * 100000 + k.length();
+                            if (score > bestScore) { bestScore = score; best2 = k; }
+                        }
+                        q.stem = stemText.get(no).get(best2);
                     }
                     // 选项优先取「题干所在帧」的，避免串到别的题
                     boolean got = false;
