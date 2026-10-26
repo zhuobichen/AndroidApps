@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="JLatexMathView">
+        <attr format="string" name="jlmv_latex"/>
+        <attr format="dimension" name="jlmv_textSize"/>
+        <attr format="color" name="jlmv_textColor"/>
+        <attr format="reference" name="jlmv_background"/>
+        <attr format="enum" name="jlmv_alignVertical">
+            <enum name="start" value="0"/>
+            <enum name="center" value="1"/>
+            <enum name="end" value="2"/>
+        </attr>
+        <attr format="enum" name="jlmv_alignHorizontal">
+            <enum name="start" value="0"/>
+            <enum name="center" value="1"/>
+            <enum name="end" value="2"/>
+        </attr>
+    </declare-styleable>
+</resources>

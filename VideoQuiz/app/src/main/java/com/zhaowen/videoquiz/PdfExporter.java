@@ -124,7 +124,8 @@ public class PdfExporter {
     }
 
     /** 整页模式：按页输出转录结果（含 LaTeX 公式） */
-    public static File exportPages(File dir, List<String> pages, List<String> confidence) throws Exception {
+    public static File exportPages(android.content.Context ctx, File dir, List<String> pages,
+                                   List<String> confidence) throws Exception {
         PdfDocument doc = new PdfDocument();
         Pager pg = new Pager(doc);
 
@@ -135,16 +136,32 @@ public class PdfExporter {
 
         pg.cv.drawText("试卷（整页转录）", M, pg.y, title);
         pg.y += 16;
-        pg.cv.drawText("由 VideoQuiz 生成，公式为 LaTeX 源码", M, pg.y, grey);
+        pg.cv.drawText("由 VideoQuiz 生成，数学公式已排版", M, pg.y, grey);
         pg.y += 18;
         if (confidence != null && !confidence.isEmpty()) {
             pg.para(confidence.get(0), paint(10f, Color.rgb(26, 115, 232), true), 6);
         }
 
+        android.graphics.Paint img = new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG);
         for (int i = 0; i < pages.size(); i++) {
             pg.gap(8);
             pg.para("—— 第 " + (i + 1) + " 页 ——", label, 6);
-            pg.para(pages.get(i), body, 10);
+            android.graphics.Bitmap bmp = null;
+            try {
+                bmp = MathTextRenderer.render(ctx, pages.get(i), (W - 2 * M) * 2, 19f,
+                        android.graphics.Color.BLACK);
+            } catch (Throwable ignored) {}
+            if (bmp == null) {
+                pg.para(pages.get(i), body, 10);
+                continue;
+            }
+            float h = bmp.getHeight() / 2f;
+            if (pg.y + h > H - M) pg.newPage();
+            android.graphics.Rect dst = new android.graphics.Rect(
+                    M, (int) pg.y, M + (W - 2 * M), (int) (pg.y + h));
+            pg.cv.drawBitmap(bmp, null, dst, img);
+            pg.y += h + 10;
+            bmp.recycle();
         }
         pg.finish();
         return save(doc, dir, "试卷-");

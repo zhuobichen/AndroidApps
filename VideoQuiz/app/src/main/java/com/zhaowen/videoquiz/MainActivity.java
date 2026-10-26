@@ -97,6 +97,25 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
+        if (getIntent().hasExtra("renderTest")) {
+            String sample = "1. 样本数据 $6,8,4,5,12$ 的中位数为（ ）\n"
+                    + "已知 $A=\\{\\sin\\frac{7\\pi}{6},\\cos\\frac{5\\pi}{3}\\}$，则 $A\\cap B=$\n"
+                    + "(2) 设 $O$ 为坐标原点，过 $F$ 的动直线 $l$ 与 $C$ 交于 $P,Q$ 两点，求 $\\tan\\angle PQR$。";
+            try {
+                android.graphics.Bitmap b = MathTextRenderer.render(this, sample, 1000, 38f,
+                        android.graphics.Color.BLACK);
+                java.io.File out = new java.io.File(getFilesDir(), "rendertest.png");
+                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(out)) {
+                    b.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, fos);
+                }
+                setContentView(new android.widget.TextView(this));
+                status("已生成 " + out.getName() + " 尺寸 " + b.getWidth() + "x" + b.getHeight());
+            } catch (Throwable t) {
+                status("渲染测试失败：" + t);
+            }
+            return;
+        }
+
         if (prefs.key().isEmpty()) status("先在「接口设置」里填 API Key");
     }
 
@@ -781,7 +800,7 @@ public class MainActivity extends AppCompatActivity {
             status("正在生成整页 PDF…");
             new Thread(() -> {
                 try {
-                    File f = PdfExporter.exportPages(getFilesDir(), pages, confidenceReport());
+                    File f = PdfExporter.exportPages(getApplicationContext(), getFilesDir(), pages, confidenceReport());
                     ui.post(() -> {
                         status("已生成：" + f.getName());
                         setBusy(false);
