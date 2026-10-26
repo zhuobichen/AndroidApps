@@ -285,6 +285,11 @@ public class MainActivity extends AppCompatActivity {
                 for (Question q : map.values()) {
                     if (q.stem.isEmpty()) q.stem = "（第 " + q.no + " 题，题干见原文）";
                     q.stem = trimToOwnBlank(q.no, q.stem);
+                    // 清理题干：去掉串入的「【原文】」标记及其后的内容
+                    int cut = q.stem.indexOf("【原");
+                    if (cut > 0) q.stem = q.stem.substring(0, cut).trim();
+                    q.stem = q.stem.replaceAll("\\s+", " ").trim();
+
                     // 题干里没有字母 = 只是横线标记（如 "36 __________."），从原文回填所在句
                     if (!q.stem.matches(".*[A-Za-z]{3,}.*")) {
                         String ctx = sentenceWithBlank(q.no);
@@ -296,11 +301,27 @@ public class MainActivity extends AppCompatActivity {
                 lastTotalFrames = totalFrames[0];
                 lastKeptFrames = kept;
 
+                // 收尾再清一遍题干：去掉串入的「【原文】」和后续内容
+                for (Question q : map.values()) {
+                    int k = q.stem.indexOf("【原");
+                    if (k > 0) q.stem = q.stem.substring(0, k);
+                    q.stem = q.stem.replaceAll("\\s+", " ").trim();
+                }
+
                 // 统计「同一题号出现几个不同版本」
+                // 只有「实质不同」（相似度 < 0.85）才算版本冲突，OCR 字面差异不算
                 variantConflicts.clear();
                 for (Map.Entry<Integer, Map<String, Integer>> e : stemVotes.entrySet()) {
-                    if (e.getValue().size() > 1) {
-                        variantConflicts.put(String.valueOf(e.getKey()), e.getValue().size());
+                    List<String> clusters = new ArrayList<>();
+                    for (String k : e.getValue().keySet()) {
+                        boolean dup = false;
+                        for (String c0 : clusters) {
+                            if (jaccard(k.toLowerCase(), c0.toLowerCase()) >= 0.85) { dup = true; break; }
+                        }
+                        if (!dup) clusters.add(k);
+                    }
+                    if (clusters.size() > 1) {
+                        variantConflicts.put(String.valueOf(e.getKey()), clusters.size());
                     }
                 }
 
@@ -509,8 +530,7 @@ public class MainActivity extends AppCompatActivity {
             if (q.stem.startsWith("（第")) {
                 w.add("第 " + q.no + " 题只读到选项、没读到题干");
             }
-            if (q.no >= 21 && q.options.isEmpty() && q.stem.length() > 10
-                    && !q.stem.contains("___") && !q.stem.contains("______")) {
+            if (q.no >= 21 && q.options.isEmpty() && q.stem.length() > 10) {
                 w.add("第 " + q.no + " 题没有读到选项");
             }
         }
@@ -675,7 +695,29 @@ public class MainActivity extends AppCompatActivity {
                 cur.questions.add((Question) e[2]);
             }
         }
-        return blocks;
+        // 按「块内最小题号」排序，保证卷面题号递增；无题目的原文块排在其后一题之前
+        int n = blocks.size();
+        int[] key = new int[n];
+        int nextQ = 1000;
+        for (int i = n - 1; i >= 0; i--) {
+            PdfExporter.Block b = blocks.get(i);
+            int min = 1000;
+            for (Question q : b.questions) min = Math.min(min, q.no);
+            key[i] = min < 1000 ? min : nextQ;
+            if (min < 1000) nextQ = min;
+        }
+        Integer[] idx = new Integer[n];
+        for (int i = 0; i < n; i++) idx[i] = i;
+        java.util.Arrays.sort(idx, (a, b) -> {
+            if (key[a] != key[b]) return Integer.compare(key[a], key[b]);
+            return Integer.compare(a, b);
+        });
+        List<PdfExporter.Block> sorted = new ArrayList<>();
+        for (int i : idx) sorted.add(blocks.get(i));
+        for (PdfExporter.Block b : sorted) {
+            b.questions.sort((x, y) -> Integer.compare(x.no, y.no));
+        }
+        return sorted;
     }
 
     private void sharePdfs(File paper, File answers) {

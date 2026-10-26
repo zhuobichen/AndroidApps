@@ -1,0 +1,7 @@
+试卷页数=14 答案页数=2
+题号顺序: [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65]
+是否升序: True
+缺号: []
+题干含【原文】标记的题: [57]
+[54] I am grateful for the 54______ that I had growing up and know that wherever my next adventure takes me, I can 55______ my small town roots to lead me in the right direction. 55. I am grateful for the 
+[55] I am grateful for the 54______ that I had growing up and know that wherever my next adventure takes me, I can 55______ my small town roots to lead me in the right direction. 【原⽂】 had known each other 
