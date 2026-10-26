@@ -252,14 +252,44 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
 
+                // 空白题（题干里没字母）：先本地回填，剩下的交给模型按原文补全
+                List<Integer> needCtx = new ArrayList<>();
+                for (Question q : map.values()) {
+                    if (q.stem.contains("___") && !q.stem.startsWith("（第")) {
+                        needCtx.add(q.no);
+                    }
+                }
+                if (!needCtx.isEmpty() && !paras.isEmpty()) {
+                    StringBuilder allP = new StringBuilder();
+                    for (Para p : paras) allP.append(p.text).append("\n\n");
+                    StringBuilder nos = new StringBuilder();
+                    for (int no : needCtx) nos.append(no).append(' ');
+                    try {
+                        String reply = client.chat(
+                                "你是英语试卷排版助手。只输出 JSON。",
+                                "原文：\n" + allP + "\n\n请为下列每个空号，给出它所在的那一整句（照抄原文，不要改写，"
+                                        + "包含空格前后的内容）：\n" + nos
+                                        + "\n输出 JSON：{\"36\":\"该空所在的完整句子\", ...}");
+                        JSONObject o = new JSONObject(reply.substring(reply.indexOf('{'), reply.lastIndexOf('}') + 1));
+                        for (int no : needCtx) {
+                            String s = o.optString(String.valueOf(no), "").trim();
+                            Question q = map.get(no);
+                            if (q != null && s.length() > 20) q.stem = s;
+                        }
+                    } catch (Throwable t) {
+                        android.util.Log.w("VideoQuiz", "context fill failed: " + t.getMessage());
+                    }
+                }
+
                 // 完形选项表可能没有题干，补占位，避免 PDF 里空着
                 for (Question q : map.values()) {
                     if (q.stem.isEmpty()) q.stem = "（第 " + q.no + " 题，题干见原文）";
                     q.stem = trimToOwnBlank(q.no, q.stem);
-                    // 只有横线（如 36______）的题，从原文里找回它所在的那句话
-                    if (q.stem.matches("^\\d+\\s*_{2,}\\s*\\.?$")) {
+                    // 题干里没有字母 = 只是横线标记（如 "36 __________."），从原文回填所在句
+                    if (!q.stem.matches(".*[A-Za-z]{3,}.*")) {
                         String ctx = sentenceWithBlank(q.no);
                         if (ctx != null) q.stem = ctx;
+                        else android.util.Log.w("VideoQuiz", "no context for q" + q.no);
                     }
                 }
 
@@ -374,17 +404,21 @@ public class MainActivity extends AppCompatActivity {
                 .compile("(?<![0-9])" + no + "\\s*_{2,}");
         String best = null;
         int bestIdx = -1;
+        int bestScore = -1;
         for (int i = 0; i < sentences.length; i++) {
             String t = sentences[i].trim();
             if (t.length() < 8 || t.length() > 400) continue;
-            if (pat.matcher(t).find()) {
-                if (best == null || t.length() < best.length()) { best = t; bestIdx = i; }
-            }
+            if (!pat.matcher(t).find()) continue;
+            int score = t.replaceAll("[^A-Za-z]", "").length();   // 字母越多，句子越完整
+            if (score > bestScore) { bestScore = score; best = t; bestIdx = i; }
         }
-        // 空格在句末时会单独成句，把上一句拼回来
-        if (best != null && best.length() < 60 && bestIdx > 0) {
+        // 空格在句首/句末时，把相邻那句也拼上，给足上下文
+        if (best != null && bestIdx > 0) {
             String prev = sentences[bestIdx - 1].trim();
-            if (prev.length() > 15) best = prev + " " + best;
+            boolean startsWithBlank = best.matches("^\\s*\\d+\\s*_{2,}.*");
+            if ((startsWithBlank || best.length() < 60) && prev.length() > 15) {
+                best = prev + " " + best;
+            }
         }
         return best;
     }
