@@ -123,6 +123,33 @@ public class PdfExporter {
         return save(doc, dir, "试卷-");
     }
 
+    /** 整页模式：按页输出转录结果（含 LaTeX 公式） */
+    public static File exportPages(File dir, List<String> pages, List<String> confidence) throws Exception {
+        PdfDocument doc = new PdfDocument();
+        Pager pg = new Pager(doc);
+
+        TextPaint title = paint(18f, Color.BLACK, true);
+        TextPaint body = paint(9.5f, Color.BLACK, false);
+        TextPaint label = paint(10.5f, Color.rgb(26, 115, 232), true);
+        TextPaint grey = paint(9f, Color.rgb(90, 90, 90), false);
+
+        pg.cv.drawText("试卷（整页转录）", M, pg.y, title);
+        pg.y += 16;
+        pg.cv.drawText("由 VideoQuiz 生成，公式为 LaTeX 源码", M, pg.y, grey);
+        pg.y += 18;
+        if (confidence != null && !confidence.isEmpty()) {
+            pg.para(confidence.get(0), paint(10f, Color.rgb(26, 115, 232), true), 6);
+        }
+
+        for (int i = 0; i < pages.size(); i++) {
+            pg.gap(8);
+            pg.para("—— 第 " + (i + 1) + " 页 ——", label, 6);
+            pg.para(pages.get(i), body, 10);
+        }
+        pg.finish();
+        return save(doc, dir, "试卷-");
+    }
+
     /** 参考答案：逐题答案 + 写作思路与范文 */
     public static File exportAnswers(File dir, List<Question> questions,
                                      List<String> writings, List<String> essays) throws Exception {

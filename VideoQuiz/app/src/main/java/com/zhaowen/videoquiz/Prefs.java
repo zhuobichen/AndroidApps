@@ -23,6 +23,14 @@ public class Prefs {
         return sp.getString("model", "deepseek-chat");
     }
 
+    public boolean pageMode() {
+        return sp.getBoolean("pageMode", false);
+    }
+
+    public void setPageMode(boolean on) {
+        sp.edit().putBoolean("pageMode", on).apply();
+    }
+
     public void save(String base, String key, String model) {
         sp.edit().putString("base", base.trim()).putString("key", key.trim())
                 .putString("model", model.trim()).apply();

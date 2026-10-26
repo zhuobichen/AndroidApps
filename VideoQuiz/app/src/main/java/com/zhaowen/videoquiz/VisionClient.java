@@ -121,6 +121,35 @@ public class VisionClient {
         return r;
     }
 
+    private static final String PAGE_PROMPT =
+            "这是一页试卷的照片。请把整页内容【逐字转录】成文字，要求：\n" +
+            "1. 保留原有题号、选项、小问编号和段落；\n" +
+            "2. 所有数学公式用 LaTeX 写，行内公式用 $...$，独立公式用 $$...$$；\n" +
+            "3. 不要改写、概括、翻译，不要补全没看清的内容（看不清写 […]）；\n" +
+            "4. 只输出转录结果本身，不要任何说明或 JSON 包装。";
+
+    /** 整页转录：返回该页的完整文字（含 LaTeX 公式） */
+    public String transcribePage(Bitmap bmp) throws Exception {
+        Bitmap scaled = scaleDown(bmp, 1600);
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        scaled.compress(Bitmap.CompressFormat.JPEG, 92, bos);
+        if (scaled != bmp) scaled.recycle();
+        String b64 = Base64.getEncoder().encodeToString(bos.toByteArray());
+
+        JSONArray content = new JSONArray();
+        content.put(new JSONObject().put("type", "text").put("text", PAGE_PROMPT));
+        content.put(new JSONObject().put("type", "image_url")
+                .put("image_url", new JSONObject().put("url", "data:image/jpeg;base64," + b64)));
+        JSONArray msgs = new JSONArray()
+                .put(new JSONObject().put("role", "user").put("content", content));
+        JSONObject req = new JSONObject()
+                .put("model", model).put("messages", msgs)
+                .put("temperature", 0).put("max_tokens", 3000);
+        String reply = post("/chat/completions", req.toString());
+        return new JSONObject(reply).getJSONArray("choices").getJSONObject(0)
+                .getJSONObject("message").getString("content").trim();
+    }
+
     /** 纯文本调用（解题用） */
     public String chat(String system, String user) throws Exception {
         JSONArray msgs = new JSONArray()

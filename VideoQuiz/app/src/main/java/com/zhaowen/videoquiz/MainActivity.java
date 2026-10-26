@@ -40,6 +40,7 @@ public class MainActivity extends AppCompatActivity {
     private final List<Para> paras = new ArrayList<>();
     private final List<String> writings = new ArrayList<>();
     private final List<String> essays = new ArrayList<>();
+    private final List<String> pages = new ArrayList<>();
 
     /** 一段原文，记录它出现在第几帧（用于还原试卷顺序） */
     private static class Para {
@@ -108,8 +109,9 @@ public class MainActivity extends AppCompatActivity {
         ui.post(() -> {
             progress.setVisibility(b ? View.VISIBLE : View.GONE);
             findViewById(R.id.btnRun).setEnabled(!b && videoUri != null);
-            findViewById(R.id.btnSolve).setEnabled(!b && !questions.isEmpty());
-            findViewById(R.id.btnPdf).setEnabled(!b && !questions.isEmpty());
+            findViewById(R.id.btnSolve).setEnabled(!b && !questions.isEmpty() && !prefs.pageMode());
+            boolean hasOut = prefs.pageMode() ? !pages.isEmpty() : !questions.isEmpty();
+            findViewById(R.id.btnPdf).setEnabled(!b && hasOut);
         });
     }
 
@@ -125,6 +127,8 @@ public class MainActivity extends AppCompatActivity {
         setBusy(true);
         questions.clear();
         passages.clear();
+        pages.clear();
+        if (prefs.pageMode()) { runPageMode(); return; }
         progress.setProgress(0);
 
         new Thread(() -> {
@@ -599,6 +603,101 @@ public class MainActivity extends AppCompatActivity {
         return sb.toString();
     }
 
+    /** 整页模式：每帧整页转录 → 去重 → 出 PDF */
+    private void runPageMode() {
+        new Thread(() -> {
+            VisionClient client = new VisionClient(prefs.base(), prefs.key(), prefs.model());
+            try {
+                final List<String> collected = new ArrayList<>();
+                final java.util.Set<String> seenLines = new java.util.HashSet<>();
+                int kept = FrameSampler.sample(this, videoUri, 1, 40, (bmp, t, sharp, idx, total) -> {
+                    try {
+                        String page = client.transcribePage(bmp);
+                        if (page != null && page.trim().length() > 60) {
+                            String p = page.trim();
+                            // 跨页去重：已经出现过的行不再重复输出
+                            StringBuilder keptText = new StringBuilder();
+                            int fresh = 0;
+                            for (String ln : p.split("\n")) {
+                                String k = normStem(ln);
+                                if (k.length() > 8) {
+                                    if (seenLines.contains(k)) continue;
+                                    seenLines.add(k);
+                                    fresh++;
+                                }
+                                keptText.append(ln).append('\n');
+                            }
+                            if (fresh < 4) { bmp.recycle(); return true; }
+                            p = keptText.toString().trim();
+                            // 同一页会拍到多次：相似就保留更完整的那份
+                            // 同一屏会拍到多次：行重叠 ≥ 80% 视为同一页
+                            int dupAt = -1;
+                            java.util.Set<String> newLines = new java.util.HashSet<>();
+                            for (String ln : p.split("\n")) {
+                                String k = normStem(ln);
+                                if (k.length() > 10) newLines.add(k);
+                            }
+                            for (int i = 0; i < collected.size(); i++) {
+                                if (jaccard(normStem(collected.get(i)), normStem(p)) >= 0.75) {
+                                    dupAt = i; break;
+                                }
+                                java.util.Set<String> oldLines = new java.util.HashSet<>();
+                                for (String ln : collected.get(i).split("\n")) {
+                                    String k = normStem(ln);
+                                    if (k.length() > 10) oldLines.add(k);
+                                }
+                                if (!newLines.isEmpty()) {
+                                    int hit = 0;
+                                    for (String k : newLines) if (oldLines.contains(k)) hit++;
+                                    if (hit >= newLines.size() * 0.8) { dupAt = i; break; }
+                                }
+                            }
+                            if (dupAt >= 0) {
+                                if (p.length() > collected.get(dupAt).length()) collected.set(dupAt, p);
+                            } else {
+                                collected.add(p);
+                            }
+                        }
+                        final int n = collected.size();
+                        ui.post(() -> {
+                            progress.setProgress(Math.min(95, idx * 95 / Math.max(1, total)));
+                            tvStatus.setText("已读 " + idx + " 帧 · 识别到 " + n + " 页");
+                        });
+                    } catch (Throwable e) {
+                        android.util.Log.w("VideoQuiz", "page " + idx + " failed: " + e.getMessage());
+                    } finally {
+                        bmp.recycle();
+                    }
+                    return true;
+                }, (d, t) -> {});
+
+                ui.post(() -> {
+                    pages.clear();
+                    pages.addAll(collected);
+                    progress.setProgress(100);
+                    if (pages.isEmpty()) {
+                        tvResult.setText("没有识别到内容。视频可能太糊或画面里没有文字。");
+                        status("识别失败");
+                    } else {
+                        StringBuilder sb = new StringBuilder();
+                        for (int i = 0; i < pages.size(); i++) {
+                            sb.append("—— 第 ").append(i + 1).append(" 页 ——\n")
+                              .append(pages.get(i)).append("\n\n");
+                        }
+                        tvResult.setText(sb.toString());
+                        status("整页模式：识别到 " + pages.size() + " 页（共读 " + kept + " 帧）");
+                    }
+                    findViewById(R.id.btnSolve).setEnabled(false);
+                    findViewById(R.id.btnPdf).setEnabled(!pages.isEmpty());
+                    setBusy(false);
+                });
+            } catch (Throwable e) {
+                status("识别失败：" + e.getMessage());
+                setBusy(false);
+            }
+        }).start();
+    }
+
     private void render() {
         StringBuilder sb = new StringBuilder();
         for (Question q : questions) sb.append(q.toDisplay()).append('\n');
@@ -676,6 +775,25 @@ public class MainActivity extends AppCompatActivity {
     // ---------- PDF ----------
 
     private void makePdf() {
+        if (prefs.pageMode()) {
+            if (pages.isEmpty()) return;
+            setBusy(true);
+            status("正在生成整页 PDF…");
+            new Thread(() -> {
+                try {
+                    File f = PdfExporter.exportPages(getFilesDir(), pages, confidenceReport());
+                    ui.post(() -> {
+                        status("已生成：" + f.getName());
+                        setBusy(false);
+                        sharePdf(f);
+                    });
+                } catch (Throwable e) {
+                    status("生成失败：" + e.getMessage());
+                    setBusy(false);
+                }
+            }).start();
+            return;
+        }
         if (questions.isEmpty()) return;
         boolean answered = false;
         for (Question q : questions) if (!q.answer.isEmpty()) { answered = true; break; }
@@ -803,6 +921,12 @@ public class MainActivity extends AppCompatActivity {
         EditText eKey = field(box, "API Key", prefs.key());
         EditText eModel = field(box, "模型名", prefs.model());
 
+        android.widget.CheckBox cb = new android.widget.CheckBox(this);
+        cb.setText("整页模式（数学/公式卷：整页转录为 LaTeX，不自动解题）");
+        cb.setChecked(prefs.pageMode());
+        cb.setTextSize(12);
+        box.addView(cb);
+
         new MaterialAlertDialogBuilder(this)
                 .setTitle("接口设置")
                 .setMessage("默认 DeepSeek（deepseek-chat，支持读图）。也可以填其它 OpenAI 兼容服务。")
@@ -810,6 +934,7 @@ public class MainActivity extends AppCompatActivity {
                 .setPositiveButton("保存", (d, w) -> {
                     prefs.save(eBase.getText().toString(), eKey.getText().toString(),
                             eModel.getText().toString());
+                    prefs.setPageMode(cb.isChecked());
                     status("已保存：" + prefs.model());
                 })
                 .setNegativeButton("取消", null)
