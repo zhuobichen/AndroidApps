@@ -24,3 +24,6 @@ dist/
 # 桥接配对令牌与上传数据（敏感）
 bridge/data/
 bridge/node_modules/
+
+# 资源里的图片必须入库（上面的 *.png 只针对根目录测试产物）
+!app/src/main/res/**/*.png
