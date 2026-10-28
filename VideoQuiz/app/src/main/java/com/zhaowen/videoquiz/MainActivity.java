@@ -1417,6 +1417,53 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 
+    /** 弹窗让用户自己起名，然后在电脑工作区里建一个会话并选中它。 */
+    private void promptNewSession(TextView out) {
+        EditText input = new EditText(this);
+        input.setHint("会话名称，例如：期末数学");
+        input.setSingleLine(true);
+        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        android.widget.FrameLayout holder = new android.widget.FrameLayout(this);
+        holder.setPadding(pad, 0, pad, 0);
+        holder.addView(input);
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("新建会话")
+                .setMessage("会话会建在电脑上的「视频成卷」工作区里。")
+                .setView(holder)
+                .setPositiveButton("创建", (d, w) -> {
+                    String title = input.getText().toString().trim();
+                    if (title.isEmpty()) {
+                        status("名字不能为空");
+                        return;
+                    }
+                    createNamedSession(out, title);
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void createNamedSession(TextView out, String title) {
+        out.setText("正在创建会话「" + title + "」…");
+        new Thread(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("title", title);
+                JSONObject created = bridgeRequest("POST", "/api/sessions/create", body.toString(), "application/json", 20000);
+                String sid = created.optString("sessionId", "");
+                if (sid.isEmpty()) throw new IllegalStateException("电脑没有返回会话 ID");
+                String got = created.optString("title", title);
+                ui.post(() -> {
+                    prefs.saveBridgeSession(sid, got);
+                    prefs.setBridgeNewSession(false);
+                    out.setText(targetLabel());
+                    status("已新建并选中：" + got);
+                });
+            } catch (Throwable e) {
+                final String message = "新建失败：" + (e.getMessage() == null ? e.toString() : e.getMessage());
+                ui.post(() -> out.setText(message));
+            }
+        }, "new-session").start();
+    }
     /** 设置里显示当前选的投递目标。 */
     private String targetLabel() {
         if (prefs.bridgeNewSession()) return "目标会话：每次上传新建";
@@ -1433,6 +1480,8 @@ public class MainActivity extends AppCompatActivity {
                 JSONArray arr = payload.optJSONArray("sessions");
                 final ArrayList<String> ids = new ArrayList<>();
                 final ArrayList<String> labels = new ArrayList<>();
+                ids.add("");
+                labels.add("＋ 新建会话（自己命名）");
                 ids.add("");
                 labels.add("＋ 每次上传新建会话");
                 ids.add("");
@@ -1452,6 +1501,10 @@ public class MainActivity extends AppCompatActivity {
                         .setTitle("投递到哪个会话")
                         .setItems(items, (d, which) -> {
                             if (which == 0) {
+                                promptNewSession(out);
+                                return;
+                            }
+                            if (which == 1) {
                                 prefs.saveBridgeSession("", "");
                                 prefs.setBridgeNewSession(true);
                                 out.setText(targetLabel());
@@ -1459,7 +1512,7 @@ public class MainActivity extends AppCompatActivity {
                                 return;
                             }
                             String sid = ids.get(which);
-                            String title = which == 1 ? "" : labels.get(which);
+                            String title = which == 2 ? "" : labels.get(which);
                             prefs.saveBridgeSession(sid, title);
                             prefs.setBridgeNewSession(false);
                             out.setText(targetLabel());
