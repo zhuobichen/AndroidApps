@@ -97,6 +97,7 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btnPdf).setOnClickListener(v -> makePdf());
         findViewById(R.id.btnSettings).setOnClickListener(v -> showSettings());
         findViewById(R.id.btnDispatch).setOnClickListener(v -> dispatchPending());
+        findViewById(R.id.btnHistory).setOnClickListener(v -> showHistory());
 
         String dbg = getIntent().getStringExtra("video");
         if (dbg != null) {
@@ -128,9 +129,27 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (prefs.bridgeMode()) {
-            phase("等待选择视频");
             showEndpoint();
-            status("整段视频一次性上传到电脑，不分片。");
+            String saved = prefs.bridgeJobId();
+            if (!saved.isEmpty()) {
+                // 上次退出时还有没跑完的任务：自动接上，不用用户再点一次
+                activeBridgeJob = saved;
+                phase("恢复上次任务");
+                status("正在恢复电脑上的任务…");
+                setBusy(true);
+                new Thread(() -> {
+                    try {
+                        waitForBridgeJob(saved);
+                    } catch (Throwable e) {
+                        status("恢复失败：" + (e.getMessage() == null ? e.toString() : e.getMessage()));
+                    } finally {
+                        setBusy(false);
+                    }
+                }, "bridge-resume").start();
+            } else {
+                phase("等待选择视频");
+                status("整段视频一次性上传到电脑，不分片。");
+            }
         } else {
             showEndpoint();
             if (prefs.key().isEmpty()) phase("先在设置里填 API Key");
@@ -1433,6 +1452,86 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 
+    /** 历史任务：从电脑拉最近的任务，可重新下载结果。 */
+    private void showHistory() {
+        status("正在读取历史任务…");
+        new Thread(() -> {
+            try {
+                JSONObject payload = bridgeRequest("GET", "/api/jobs", null, null, 20000);
+                JSONArray arr = payload.optJSONArray("jobs");
+                final ArrayList<String> ids = new ArrayList<>();
+                final ArrayList<String> labels = new ArrayList<>();
+                final ArrayList<Boolean> doneFlags = new ArrayList<>();
+                if (arr != null) {
+                    for (int i = arr.length() - 1; i >= 0 && labels.size() < 30; i--) {
+                        JSONObject o = arr.getJSONObject(i);
+                        String id = o.optString("id", "");
+                        if (id.isEmpty()) continue;
+                        String state = o.optString("status", "?");
+                        String name = o.optString("originalName", "video");
+                        long size = o.optLong("size", 0);
+                        String when = o.optString("createdAt", "");
+                        if (when.length() >= 16) when = when.substring(5, 16).replace('T', ' ');
+                        ids.add(id);
+                        labels.add(when + " · " + name + " · " + size / 1024 / 1024 + "MB · " + state);
+                        doneFlags.add("complete".equals(state));
+                    }
+                }
+                if (labels.isEmpty()) {
+                    ui.post(() -> status("电脑上还没有任务"));
+                    return;
+                }
+                final String[] items = labels.toArray(new String[0]);
+                ui.post(() -> new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                        .setTitle("历史任务（点已完成的可重新下载）")
+                        .setItems(items, (d, which) -> {
+                            if (!doneFlags.get(which)) {
+                                status("这条任务状态是 " + labels.get(which) + "，没有结果可下载");
+                                return;
+                            }
+                            downloadJobResults(ids.get(which));
+                        })
+                        .show());
+            } catch (Throwable e) {
+                final String message = "读取失败：" + (e.getMessage() == null ? e.toString() : e.getMessage());
+                ui.post(() -> status(message));
+            }
+        }, "history").start();
+    }
+
+    /** 把某个已完成任务的结果文件重新下载到手机并展示文本。 */
+    private void downloadJobResults(String id) {
+        status("正在下载 " + id.substring(0, 8) + " 的结果…");
+        new Thread(() -> {
+            try {
+                JSONObject result = bridgeRequest("GET", "/api/jobs/" + id + "/result", null, null, 30000);
+                String text = result.optString("text", "");
+                JSONArray files = result.optJSONArray("files");
+                bridgeFiles.clear();
+                if (files != null) {
+                    for (int i = 0; i < files.length(); i++) {
+                        JSONObject f = files.getJSONObject(i);
+                        File out = new File(getExternalFilesDir(null), id + "_" + f.getString("name"));
+                        bridgeDownload(id, f.getString("name"), out);
+                        bridgeFiles.add(out);
+                        if (f.optString("mimeType").equals("application/pdf") && lastPdf == null) lastPdf = out;
+                    }
+                }
+                final String delivered = text.isEmpty() ? "结果已下载。" : text;
+                ui.post(() -> {
+                    tvResult.setText(delivered);
+                    View pdfBtn = findViewById(R.id.btnPdf);
+                    pdfBtn.setVisibility(bridgeFiles.isEmpty() ? View.GONE : View.VISIBLE);
+                    pdfBtn.setEnabled(!bridgeFiles.isEmpty());
+                    phase("已恢复历史结果");
+                });
+                status("已下载 " + bridgeFiles.size() + " 个文件");
+            } catch (Throwable e) {
+                final String message = "下载失败：" + (e.getMessage() == null ? e.toString() : e.getMessage());
+                ui.post(() -> status(message));
+            }
+        }, "history-download").start();
+    }
     /** 手动派发：把已上传但还没投递的任务交给目标会话。 */
     private void dispatchPending() {
         String id = activeBridgeJob != null ? activeBridgeJob : prefs.bridgeJobId();
