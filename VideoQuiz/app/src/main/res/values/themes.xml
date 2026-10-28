@@ -7,4 +7,14 @@
         <item name="android:statusBarColor">@color/surface</item>
         <item name="android:windowLightStatusBar">true</item>
     </style>
+    <style name="ShapeAppearance.Circle" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">50%</item>
+    </style>
+
+    <style name="Theme.VideoQuiz.Splash" parent="Theme.Material3.Light.NoActionBar">
+        <item name="android:windowBackground">@drawable/splash_bg</item>
+        <item name="android:statusBarColor">#1B44A8</item>
+        <item name="android:navigationBarColor">#101B3A</item>
+    </style>
 </resources>
