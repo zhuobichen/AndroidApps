@@ -237,9 +237,10 @@
             android:padding="12dp">
 
             <TextView
-                android:layout_width="wrap_content"
+                android:id="@+id/tvChatTarget"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="继续追问（投给处理这次任务的会话，不会重新生成 PDF）"
+                android:text="继续追问 · 正在确认会话…"
                 android:textColor="@color/text_tertiary"
                 android:textSize="11sp" />
 

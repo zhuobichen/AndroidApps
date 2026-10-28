@@ -71,6 +71,7 @@ public class MainActivity extends AppCompatActivity {
             registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> {
                 if (uri == null) return;
                 videoUri = uri;
+                resetHistorySelection();
                 try {
                     getContentResolver().takePersistableUriPermission(
                             uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
@@ -228,6 +229,7 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         bridgeCancelled = false;
+        resetHistorySelection();
         setBusy(true);
         progress.setIndeterminate(false);
         progress.setProgress(0);
@@ -1478,6 +1480,23 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 
+    /** 换了新视频或开始新任务时，清掉上一次的历史选中，避免状态串台。 */
+    private void resetHistorySelection() {
+        chatJob = null;
+        chatPollingJob = null;
+        ui.post(() -> {
+            View card = findViewById(R.id.chatCard);
+            if (card != null) card.setVisibility(View.GONE);
+            LinearLayout list = findViewById(R.id.chatList);
+            if (list != null) list.removeAllViews();
+            EditText input = findViewById(R.id.chatInput);
+            if (input != null) input.setText("");
+            View pdfBtn = findViewById(R.id.btnPdf);
+            if (pdfBtn != null) pdfBtn.setVisibility(View.GONE);
+            bridgeFiles.clear();
+            lastPdf = null;
+        });
+    }
     /** 结果出来后在下方显示追问面板，并开始轮询会话消息。 */
     private void showChatFor(String jobId) {
         chatJob = jobId;
@@ -1494,6 +1513,14 @@ public class MainActivity extends AppCompatActivity {
                 try {
                     JSONObject payload = bridgeRequest("GET", "/api/jobs/" + jobId + "/chat?limit=40", null, null, 15000);
                     JSONArray messages = payload.optJSONArray("messages");
+                    final String title = payload.optString("title", "");
+                    final String sid = payload.optString("sessionId", "");
+                    ui.post(() -> {
+                        TextView target = findViewById(R.id.tvChatTarget);
+                        if (target == null) return;
+                        String who = title.isEmpty() ? sid : title;
+                        target.setText("继续追问 · 会话：" + who + "（只追加消息，不重新生成 PDF）");
+                    });
                     renderChat(messages);
                 } catch (Throwable ignored) {
                     // 网络抖动就下一轮再试
