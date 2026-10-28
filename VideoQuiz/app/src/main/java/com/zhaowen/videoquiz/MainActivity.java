@@ -135,6 +135,7 @@ public class MainActivity extends AppCompatActivity {
                 // 上次退出时还有没跑完的任务：自动接上，不用用户再点一次
                 activeBridgeJob = saved;
                 phase("恢复上次任务");
+                tvVideo.setText("电脑上的任务 " + saved.substring(0, 8) + " 还在处理，正在同步状态");
                 status("正在恢复电脑上的任务…");
                 setBusy(true);
                 new Thread(() -> {

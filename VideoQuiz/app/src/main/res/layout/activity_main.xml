@@ -27,7 +27,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="视频成卷"
+                android:text="卷灵"
                 android:textColor="@color/text_primary"
                 android:textSize="22sp"
                 android:textStyle="bold" />
@@ -173,7 +173,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSolve"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="0dp"
             android:layout_height="42dp"
             android:layout_weight="1"
@@ -182,11 +182,12 @@
             android:insetBottom="0dp"
             android:text="解题"
             android:textSize="13sp"
+            android:visibility="gone"
             app:cornerRadius="14dp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnPdf"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="0dp"
             android:layout_height="42dp"
             android:layout_marginStart="8dp"
@@ -196,6 +197,7 @@
             android:insetBottom="0dp"
             android:text="打开结果 PDF"
             android:textSize="13sp"
+            android:visibility="gone"
             app:cornerRadius="14dp" />
     </LinearLayout>
 
