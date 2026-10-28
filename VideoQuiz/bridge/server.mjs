@@ -73,21 +73,45 @@ const sessionsRoot = process.env.VIDEOQUIZ_SESSIONS_ROOT
   || join(process.env.DSH_HOME || 'D:/github_project/ZhaoWen_GitHub维护/dsh/home', 'sessions');
 const anchorSessionId = process.env.VIDEOQUIZ_ANCHOR_SESSION || 'session-3b1e209a-14ac-4002-a31f-4efdc4f9064c';
 const workspacePath = process.env.VIDEOQUIZ_WORKSPACE || 'D:\\github_project\\ZhaoWen_GitHub维护';
+const workspaceStatePath = join(process.env.DSH_HOME || 'D:/github_project/ZhaoWen_GitHub维护/dsh/home', 'storages', 'workspace.json');
 
-/** 当前工作区的会话目录（以锚点会话所在的组为准）；找不到就返回 null，表示不做范围限制。 */
+/**
+ * 当前工作区的会话集合。
+ *
+ * 权威来源是 `$DSH_HOME/storages/workspace.json`：DSH 侧栏就是按「工作区内的会话 − 已归档」
+ * 来显示的。用目录名猜会多算（同 cwd 下的子代理会话也在里面），所以优先读这个文件；
+ * 读不到才退回按会话目录分组猜测。
+ */
 function workspaceSessionIds() {
+  try {
+    const state = JSON.parse(readFileSync(workspaceStatePath, 'utf8'));
+    const archived = new Set(Array.isArray(state.global?.archivedSessionIds) ? state.global.archivedSessionIds : []);
+    const workspaces = state.tables?.workspaces ?? {};
+    for (const [id, ws] of Object.entries(workspaces)) {
+      const ids = Array.isArray(ws?.sessionIds) ? ws.sessionIds : [];
+      if (!ids.includes(anchorSessionId)) continue;
+      return {
+        group: typeof ws.name === 'string' && ws.name !== '' ? ws.name : id,
+        ids: ids.filter((x) => !archived.has(x)),
+        archived: [...archived].filter((x) => ids.includes(x)).length,
+        source: 'workspace.json',
+      };
+    }
+  } catch {
+    // 继续走下面的目录推断
+  }
+
   try {
     for (const group of readdirSync(sessionsRoot)) {
       const groupDir = join(sessionsRoot, group);
       if (!existsSync(join(groupDir, anchorSessionId))) continue;
-      // 会话目录有两种命名：`session-<uuid>` 和裸 `<uuid>`（后者多为子代理/接口建出来的），
-      // 只认 session- 前缀会把一半会话漏掉。
-      const ids = readdirSync(groupDir).filter(name => /^(session-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name));
-      return { group, ids };
+      const ids = readdirSync(groupDir).filter((name) => /^(session-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name));
+      return { group, ids, source: 'sessions-dir' };
     }
   } catch {
-    // 读不到就退回「不限制」，并在返回里如实标 scope=unrestricted
+    // 退回「不限制」，并在返回里如实标 scope=unrestricted
   }
+
   return null;
 }
 // 会话控制：把手机的请求透传给管理插件的确定性命令路由（不经过大模型）。
@@ -199,21 +223,18 @@ const server = createServer(async (req, res) => {
         if (outcome.status === 200 && outcome.body.ok === true && scope !== null) {
           const allowed = new Set(scope.ids);
           const inScope = (Array.isArray(outcome.body.sessions) ? outcome.body.sessions : []).filter(s => allowed.has(s.sessionId));
+          // 与侧栏一致：工作区内未归档的会话；默认再滤掉从未命名的空会话。
           const all = url.searchParams.get('all') === '1';
-          const days = Number(url.searchParams.get('days') || 3);
-          const cutoff = Date.now() - Math.max(1, days) * 24 * 3600 * 1000;
-          const visible = all ? inScope : inScope.filter((s) => {
-            const titled = typeof s.title === 'string' && s.title.trim() !== '';
-            const fresh = typeof s.updatedAt === 'string' ? Date.parse(s.updatedAt) >= cutoff : false;
-            return titled && fresh;
-          });
+          const visible = all ? inScope : inScope.filter((s) => typeof s.title === 'string' && s.title.trim() !== '');
+          // 侧栏按最近活跃倒序，这里保持一致
           visible.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
           return json(res, 200, {
             ok: true,
             count: visible.length,
             total: inScope.length,
-            days: all ? null : days,
+            archived: scope.archived ?? 0,
             workspace: scope.group,
+            source: scope.source,
             scope: 'workspace',
             sessions: visible,
           });
