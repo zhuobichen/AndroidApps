@@ -96,6 +96,7 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btnSolve).setOnClickListener(v -> solve());
         findViewById(R.id.btnPdf).setOnClickListener(v -> makePdf());
         findViewById(R.id.btnSettings).setOnClickListener(v -> showSettings());
+        findViewById(R.id.btnDispatch).setOnClickListener(v -> dispatchPending());
 
         String dbg = getIntent().getStringExtra("video");
         if (dbg != null) {
@@ -297,6 +298,11 @@ public class MainActivity extends AppCompatActivity {
                 String retry = "电脑收到了视频，但没能通知处理会话：" + state.optString("notificationError", "未知错误");
                 ui.post(() -> tvResult.setText(retry + "\n\n视频已保存在电脑上。检查电脑端桥接服务后可以重试通知。\n\n任务号：" + id));
             }
+            final boolean waitingDispatch = "uploaded".equals(phase);
+            ui.post(() -> {
+                View dispatchBtn = findViewById(R.id.btnDispatch);
+                dispatchBtn.setVisibility(waitingDispatch && !prefs.bridgeAutoDispatch() ? View.VISIBLE : View.GONE);
+            });
             if (!"complete".equals(phase)) continue;
             JSONObject result = bridgeRequest("GET", "/api/jobs/" + id + "/result", null, null, 0);
             String text = result.optString("text", "");
@@ -360,6 +366,7 @@ public class MainActivity extends AppCompatActivity {
         c.setRequestProperty("Content-Type", "application/octet-stream");
         c.setRequestProperty("X-Video-Name-B64", android.util.Base64.encodeToString(
                 name.getBytes(java.nio.charset.StandardCharsets.UTF_8), android.util.Base64.NO_WRAP));
+        if (!prefs.bridgeAutoDispatch()) c.setRequestProperty("X-VideoQuiz-No-Dispatch", "1");
         String targetSession = prefs.bridgeSessionId();
         if (prefs.bridgeNewSession()) {
             try {
@@ -1372,6 +1379,14 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout.LayoutParams testLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         testLp.topMargin = (int) (10 * dp);
+        android.widget.CheckBox cbAuto = new android.widget.CheckBox(this);
+        cbAuto.setText("上传后立即派发任务（关掉则手动点「开始处理」）");
+        cbAuto.setChecked(prefs.bridgeAutoDispatch());
+        cbAuto.setTextSize(12);
+        LinearLayout.LayoutParams cbLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        cbLp.topMargin = (int) (8 * dp);
+        pcBox.addView(cbAuto, cbLp);
         pcBox.addView(btnTest, testLp);
         pcBox.addView(tvTest);
         box.addView(pcBox);
@@ -1409,6 +1424,7 @@ public class MainActivity extends AppCompatActivity {
                     prefs.save(eBase.getText().toString(), eKey.getText().toString(), eModel.getText().toString());
                     prefs.saveBridge(pc, eBridge.getText().toString(), eToken.getText().toString());
                     prefs.setPageMode(cbPage.isChecked());
+                    prefs.setBridgeAutoDispatch(cbAuto.isChecked());
                     showEndpoint();
                     phase(pc ? "等待选择视频" : "云端模式");
                     status(pc ? "已保存：电脑 Harness 模式" : "已保存：云端 " + prefs.model());
@@ -1417,6 +1433,39 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 
+    /** 手动派发：把已上传但还没投递的任务交给目标会话。 */
+    private void dispatchPending() {
+        String id = activeBridgeJob != null ? activeBridgeJob : prefs.bridgeJobId();
+        if (id == null || id.isEmpty()) {
+            status("没有待派发的任务");
+            return;
+        }
+        final String jobId = id;
+        findViewById(R.id.btnDispatch).setVisibility(View.GONE);
+        status("正在派发…");
+        new Thread(() -> {
+            try {
+                String path = "/api/jobs/" + jobId + "/forward";
+                JSONObject result = bridgeRequest("POST", path, "{}", "application/json", 20000);
+                boolean ok = result.optBoolean("ok", false);
+                ui.post(() -> {
+                    if (ok) {
+                        phase("已派发 · 等待电脑处理");
+                        status("任务已交给目标会话");
+                    } else {
+                        status("派发失败：" + result.optString("error", result.optString("message", "未知错误")));
+                        findViewById(R.id.btnDispatch).setVisibility(View.VISIBLE);
+                    }
+                });
+            } catch (Throwable e) {
+                final String message = "派发失败：" + (e.getMessage() == null ? e.toString() : e.getMessage());
+                ui.post(() -> {
+                    status(message);
+                    findViewById(R.id.btnDispatch).setVisibility(View.VISIBLE);
+                });
+            }
+        }, "dispatch").start();
+    }
     /** 弹窗让用户自己起名，然后在电脑工作区里建一个会话并选中它。 */
     private void promptNewSession(TextView out) {
         EditText input = new EditText(this);

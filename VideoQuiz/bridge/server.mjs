@@ -358,6 +358,12 @@ const server = createServer(async (req, res) => {
           status: 'uploaded',
         };
         writeFileSync(join(dir, 'job.json'), JSON.stringify(task, null, 2), 'utf8');
+        // 客户端可以要求「先只存不发」，等它显式调 /forward 再派发
+        const noDispatch = String(req.headers['x-videoquiz-no-dispatch'] || '') === '1';
+        if (noDispatch) {
+          return json(res, 201, { id, size: received, status: 'uploaded', dispatched: false });
+        }
+
         let forwarded = false;
         try {
           await sendToSession(id, task);
@@ -365,7 +371,7 @@ const server = createServer(async (req, res) => {
         } catch (error) {
           console.warn(`job ${id} uploaded but management-session notification failed: ${error.message}`);
         }
-        return json(res, 201, { id, size: received, status: forwarded ? 'forwarded' : 'notification_failed' });
+        return json(res, 201, { id, size: received, status: forwarded ? 'forwarded' : 'notification_failed', dispatched: forwarded });
       } catch (error) {
         try { if (existsSync(tmp)) unlinkSync(tmp); } catch {}
         try { if (existsSync(dir)) {
