@@ -80,7 +80,9 @@ function workspaceSessionIds() {
     for (const group of readdirSync(sessionsRoot)) {
       const groupDir = join(sessionsRoot, group);
       if (!existsSync(join(groupDir, anchorSessionId))) continue;
-      const ids = readdirSync(groupDir).filter(name => name.startsWith('session-'));
+      // 会话目录有两种命名：`session-<uuid>` 和裸 `<uuid>`（后者多为子代理/接口建出来的），
+      // 只认 session- 前缀会把一半会话漏掉。
+      const ids = readdirSync(groupDir).filter(name => /^(session-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name));
       return { group, ids };
     }
   } catch {
@@ -196,8 +198,25 @@ const server = createServer(async (req, res) => {
         const outcome = await supervisorCommand({ op: 'list' });
         if (outcome.status === 200 && outcome.body.ok === true && scope !== null) {
           const allowed = new Set(scope.ids);
-          const sessions = (Array.isArray(outcome.body.sessions) ? outcome.body.sessions : []).filter(s => allowed.has(s.sessionId));
-          return json(res, 200, { ok: true, count: sessions.length, workspace: scope.group, scope: 'workspace', sessions });
+          const inScope = (Array.isArray(outcome.body.sessions) ? outcome.body.sessions : []).filter(s => allowed.has(s.sessionId));
+          const all = url.searchParams.get('all') === '1';
+          const days = Number(url.searchParams.get('days') || 3);
+          const cutoff = Date.now() - Math.max(1, days) * 24 * 3600 * 1000;
+          const visible = all ? inScope : inScope.filter((s) => {
+            const titled = typeof s.title === 'string' && s.title.trim() !== '';
+            const fresh = typeof s.updatedAt === 'string' ? Date.parse(s.updatedAt) >= cutoff : false;
+            return titled && fresh;
+          });
+          visible.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+          return json(res, 200, {
+            ok: true,
+            count: visible.length,
+            total: inScope.length,
+            days: all ? null : days,
+            workspace: scope.group,
+            scope: 'workspace',
+            sessions: visible,
+          });
         }
         return json(res, outcome.status === undefined ? 200 : outcome.status, { ...outcome.body, scope: 'unrestricted' });
       } catch (error) {
