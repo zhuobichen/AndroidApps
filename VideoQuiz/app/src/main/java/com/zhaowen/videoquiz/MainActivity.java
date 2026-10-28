@@ -182,10 +182,16 @@ public class MainActivity extends AppCompatActivity {
         ui.post(() -> {
             progress.setVisibility(b ? View.VISIBLE : View.GONE);
             findViewById(R.id.btnRun).setEnabled(!b && videoUri != null);
-            findViewById(R.id.btnSolve).setEnabled(!b && !questions.isEmpty() && !prefs.pageMode());
-            boolean hasOut = prefs.bridgeMode() ? !bridgeFiles.isEmpty()
+            boolean bridge = prefs.bridgeMode();
+            // 电脑模式下识别与解题都在电脑侧完成，手机上的这两个按钮没有意义
+            View solveBtn = findViewById(R.id.btnSolve);
+            solveBtn.setVisibility(bridge ? View.GONE : View.VISIBLE);
+            solveBtn.setEnabled(!b && !questions.isEmpty() && !prefs.pageMode());
+            boolean hasOut = bridge ? !bridgeFiles.isEmpty()
                     : (prefs.pageMode() ? !pages.isEmpty() : !questions.isEmpty());
-            findViewById(R.id.btnPdf).setEnabled(!b && hasOut);
+            View pdfBtn = findViewById(R.id.btnPdf);
+            pdfBtn.setVisibility(bridge && !hasOut ? View.GONE : View.VISIBLE);
+            pdfBtn.setEnabled(!b && hasOut);
         });
     }
 
@@ -310,7 +316,9 @@ public class MainActivity extends AppCompatActivity {
             String delivered = text.isEmpty() ? "处理完成，结果文件已下载。" : text;
             ui.post(() -> {
                 tvResult.setText(delivered);
-                findViewById(R.id.btnPdf).setEnabled(!bridgeFiles.isEmpty());
+                View pdfBtn = findViewById(R.id.btnPdf);
+                pdfBtn.setVisibility(bridgeFiles.isEmpty() ? View.GONE : View.VISIBLE);
+                pdfBtn.setEnabled(!bridgeFiles.isEmpty());
                 progress.setProgress(100);
             });
             status("结果已保存到手机，可点下方「打开结果 PDF」查看");
