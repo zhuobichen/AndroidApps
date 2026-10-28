@@ -87,11 +87,19 @@ function workspaceSessionIds() {
     const state = JSON.parse(readFileSync(workspaceStatePath, 'utf8'));
     const archived = new Set(Array.isArray(state.global?.archivedSessionIds) ? state.global.archivedSessionIds : []);
     const workspaces = state.tables?.workspaces ?? {};
+    const pinned = String(process.env.VIDEOQUIZ_WORKSPACE_ID || '').trim();
+    const pinnedTitle = String(process.env.VIDEOQUIZ_WORKSPACE_TITLE || '').trim();
     for (const [id, ws] of Object.entries(workspaces)) {
       const ids = Array.isArray(ws?.sessionIds) ? ws.sessionIds : [];
-      if (!ids.includes(anchorSessionId)) continue;
+      const matches = pinned !== ''
+        ? id === pinned
+        : pinnedTitle !== ''
+          ? String(ws?.title || '') === pinnedTitle
+          : ids.includes(anchorSessionId);
+      if (!matches) continue;
       return {
-        group: typeof ws.name === 'string' && ws.name !== '' ? ws.name : id,
+        id,
+        group: typeof ws.title === 'string' && ws.title !== '' ? ws.title : id,
         ids: ids.filter((x) => !archived.has(x)),
         archived: [...archived].filter((x) => ids.includes(x)).length,
         source: 'workspace.json',
@@ -247,6 +255,28 @@ const server = createServer(async (req, res) => {
           message: '连不上管理插件的 /command：' + error.message,
           hint: '确认 DSH 已重启并加载了新版 dsh-agent-supervisor（需要 POST /command 路由）。',
         });
+      }
+    }
+
+    // 在本工作区新建一个空会话（不发消息），供「每次任务一个会话」使用
+    if (req.method === 'POST' && url.pathname === '/api/sessions/create') {
+      let payload;
+      try {
+        payload = await readJsonBody(req, 16 * 1024);
+      } catch (error) {
+        return json(res, 400, { ok: false, code: 'BAD_JSON', message: error.message });
+      }
+      const scope = workspaceSessionIds();
+      try {
+        const outcome = await supervisorCommand({
+          op: 'createSession',
+          ...(scope === null ? { cwd: workspacePath } : { workspaceId: scope.id }),
+          ...(typeof payload.title === 'string' && payload.title.trim() !== '' ? { title: payload.title.trim() } : {}),
+          ...(typeof payload.agentPreset === 'string' && payload.agentPreset.trim() !== '' ? { agentPreset: payload.agentPreset.trim() } : {}),
+        });
+        return json(res, outcome.status === undefined ? 200 : outcome.status, outcome.body);
+      } catch (error) {
+        return json(res, 502, { ok: false, code: 'SUPERVISOR_UNREACHABLE', message: error.message });
       }
     }
 
