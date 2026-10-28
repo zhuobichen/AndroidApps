@@ -64,6 +64,8 @@ public class MainActivity extends AppCompatActivity {
 
     private TextView tvVideo, tvStatus, tvResult, tvPhase, tvEndpoint;
     private ProgressBar progress;
+    private String chatJob;
+    private String chatPollingJob;
 
     private final ActivityResultLauncher<String[]> picker =
             registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> {
@@ -98,6 +100,7 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btnSettings).setOnClickListener(v -> showSettings());
         findViewById(R.id.btnDispatch).setOnClickListener(v -> dispatchPending());
         findViewById(R.id.btnHistory).setOnClickListener(v -> showHistory());
+        findViewById(R.id.chatSend).setOnClickListener(v -> sendChat());
 
         String dbg = getIntent().getStringExtra("video");
         if (dbg != null) {
@@ -348,6 +351,7 @@ public class MainActivity extends AppCompatActivity {
                 progress.setProgress(100);
             });
             status("结果已保存到手机，可点下方「打开结果 PDF」查看");
+            showChatFor(id);
             return;
         }
         if (bridgeCancelled) {
@@ -1474,6 +1478,95 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 
+    /** 结果出来后在下方显示追问面板，并开始轮询会话消息。 */
+    private void showChatFor(String jobId) {
+        chatJob = jobId;
+        View card = findViewById(R.id.chatCard);
+        card.setVisibility(View.VISIBLE);
+        startChatPolling(jobId);
+    }
+
+    private void startChatPolling(String jobId) {
+        if (chatPollingJob != null && chatPollingJob.equals(jobId)) return;
+        chatPollingJob = jobId;
+        new Thread(() -> {
+            while (!isFinishing() && jobId.equals(chatPollingJob)) {
+                try {
+                    JSONObject payload = bridgeRequest("GET", "/api/jobs/" + jobId + "/chat?limit=40", null, null, 15000);
+                    JSONArray messages = payload.optJSONArray("messages");
+                    renderChat(messages);
+                } catch (Throwable ignored) {
+                    // 网络抖动就下一轮再试
+                }
+                try {
+                    Thread.sleep(3000);
+                } catch (InterruptedException stop) {
+                    return;
+                }
+            }
+        }, "chat-poll").start();
+    }
+
+    private void renderChat(JSONArray messages) {
+        if (messages == null) return;
+        ui.post(() -> {
+            LinearLayout list = findViewById(R.id.chatList);
+            if (list == null) return;
+            list.removeAllViews();
+            int start = Math.max(0, messages.length() - 30);
+            for (int i = start; i < messages.length(); i++) {
+                JSONObject m = messages.optJSONObject(i);
+                if (m == null) continue;
+                String role = m.optString("role", "?");
+                String text = m.optString("text", "");
+                if (text.trim().isEmpty()) continue;
+
+                TextView bubble = new TextView(this);
+                bubble.setText(text);
+                bubble.setTextSize(13);
+                bubble.setPadding(dp(12), dp(8), dp(12), dp(8));
+                boolean mine = "user".equals(role);
+                bubble.setBackgroundColor(mine ? 0xFFE8EFFF : 0xFFF2F4F8);
+                bubble.setTextColor(0xFF14181F);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                lp.topMargin = dp(4);
+                lp.leftMargin = mine ? dp(28) : 0;
+                lp.rightMargin = mine ? 0 : dp(28);
+                bubble.setLayoutParams(lp);
+                list.addView(bubble);
+            }
+        });
+    }
+
+    private void sendChat() {
+        String jobId = chatJob;
+        EditText input = findViewById(R.id.chatInput);
+        String text = input == null ? "" : input.getText().toString().trim();
+        if (jobId == null || jobId.isEmpty()) {
+            status("还没有可追问的任务");
+            return;
+        }
+        if (text.isEmpty()) return;
+        input.setText("");
+        status("已发送，等待回复…");
+        new Thread(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("text", text);
+                JSONObject result = bridgeRequest("POST", "/api/jobs/" + jobId + "/chat", body.toString(), "application/json", 20000);
+                boolean ok = result.optBoolean("ok", false);
+                ui.post(() -> status(ok ? "已投递，等待 AI 回复" : "发送失败：" + result.optString("message", result.optString("code", "未知"))));
+            } catch (Throwable e) {
+                final String message = "发送失败：" + (e.getMessage() == null ? e.toString() : e.getMessage());
+                ui.post(() -> status(message));
+            }
+        }, "chat-send").start();
+    }
+
+    private int dp(int value) {
+        return (int) (value * getResources().getDisplayMetrics().density);
+    }
     /** 历史任务：从电脑拉最近的任务，可重新下载结果。 */
     private void showHistory() {
         status("正在读取历史任务…");
@@ -1547,6 +1640,7 @@ public class MainActivity extends AppCompatActivity {
                     pdfBtn.setEnabled(!bridgeFiles.isEmpty());
                     phase("已恢复历史结果");
                 });
+                showChatFor(id);
                 status("已下载 " + bridgeFiles.size() + " 个文件");
             } catch (Throwable e) {
                 final String message = "下载失败：" + (e.getMessage() == null ? e.toString() : e.getMessage());

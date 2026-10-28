@@ -400,6 +400,49 @@ const server = createServer(async (req, res) => {
       }
     }
 
+    // 追问：读某个任务对应会话的最近消息 / 往该会话再发一条
+    const chatMatch = url.pathname.match(/^\/api\/jobs\/([0-9a-f-]{36})\/chat$/i);
+    if (chatMatch) {
+      const id = chatMatch[1];
+      const dir = jobPath(id);
+      const job = dir ? readJson(join(dir, 'job.json')) : null;
+      if (!job) return json(res, 404, { ok: false, code: 'JOB_NOT_FOUND' });
+
+      const forwardedInfo = readJson(join(dir, 'forwarded.json'));
+      const sessionId = (forwardedInfo && forwardedInfo.targetSessionId)
+        || job.targetSessionId
+        || targetSessionId;
+
+      if (req.method === 'GET') {
+        const limit = Number(url.searchParams.get('limit') || 30);
+        try {
+          const outcome = await supervisorCommand({ op: 'tail', sessionId, limit });
+          return json(res, outcome.status === undefined ? 200 : outcome.status, { ...outcome.body, sessionId });
+        } catch (error) {
+          return json(res, 502, { ok: false, code: 'SUPERVISOR_UNREACHABLE', message: error.message });
+        }
+      }
+
+      if (req.method === 'POST') {
+        let payload;
+        try {
+          payload = await readJsonBody(req, 32 * 1024);
+        } catch (error) {
+          return json(res, 400, { ok: false, code: 'BAD_JSON', message: error.message });
+        }
+        const text = typeof payload.text === 'string' ? payload.text : '';
+        if (text.trim() === '') return json(res, 400, { ok: false, code: 'EMPTY_TEXT' });
+        try {
+          const outcome = await supervisorCommand({ op: 'send', sessionId, text });
+          return json(res, outcome.status === undefined ? 200 : outcome.status, outcome.body);
+        } catch (error) {
+          return json(res, 502, { ok: false, code: 'SUPERVISOR_UNREACHABLE', message: error.message });
+        }
+      }
+
+      return json(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED' });
+    }
+
     if (req.method === 'POST' && url.pathname === '/api/jobs/claim') {
       let body = '';
       for await (const chunk of req) {
