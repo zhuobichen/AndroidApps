@@ -361,6 +361,23 @@ public class MainActivity extends AppCompatActivity {
         c.setRequestProperty("X-Video-Name-B64", android.util.Base64.encodeToString(
                 name.getBytes(java.nio.charset.StandardCharsets.UTF_8), android.util.Base64.NO_WRAP));
         String targetSession = prefs.bridgeSessionId();
+        if (prefs.bridgeNewSession()) {
+            try {
+                String stamp = new java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.CHINA)
+                        .format(new java.util.Date());
+                JSONObject body = new JSONObject();
+                body.put("title", "试卷 " + stamp);
+                JSONObject created = bridgeRequest("POST", "/api/sessions/create", body.toString(), "application/json", 20000);
+                String fresh = created.optString("sessionId", "");
+                if (!fresh.isEmpty()) {
+                    targetSession = fresh;
+                    phase("已新建会话");
+                    status("新建会话：" + created.optString("title", fresh));
+                }
+            } catch (Throwable ignored) {
+                // 建会话失败就退回默认目标，不阻塞上传
+            }
+        }
         if (!targetSession.isEmpty()) {
             c.setRequestProperty("X-VideoQuiz-Session-B64", android.util.Base64.encodeToString(
                     targetSession.getBytes(java.nio.charset.StandardCharsets.UTF_8), android.util.Base64.NO_WRAP));
@@ -1402,6 +1419,7 @@ public class MainActivity extends AppCompatActivity {
 
     /** 设置里显示当前选的投递目标。 */
     private String targetLabel() {
+        if (prefs.bridgeNewSession()) return "目标会话：每次上传新建";
         String title = prefs.bridgeSessionTitle();
         return title.isEmpty() ? "目标会话：电脑默认" : "目标会话：" + title;
     }
@@ -1415,6 +1433,8 @@ public class MainActivity extends AppCompatActivity {
                 JSONArray arr = payload.optJSONArray("sessions");
                 final ArrayList<String> ids = new ArrayList<>();
                 final ArrayList<String> labels = new ArrayList<>();
+                ids.add("");
+                labels.add("＋ 每次上传新建会话");
                 ids.add("");
                 labels.add("不指定（用电脑默认会话）");
                 if (arr != null) {
@@ -1431,9 +1451,17 @@ public class MainActivity extends AppCompatActivity {
                 ui.post(() -> new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                         .setTitle("投递到哪个会话")
                         .setItems(items, (d, which) -> {
+                            if (which == 0) {
+                                prefs.saveBridgeSession("", "");
+                                prefs.setBridgeNewSession(true);
+                                out.setText(targetLabel());
+                                status("已选择：每次上传新建会话");
+                                return;
+                            }
                             String sid = ids.get(which);
-                            String title = which == 0 ? "" : labels.get(which);
+                            String title = which == 1 ? "" : labels.get(which);
                             prefs.saveBridgeSession(sid, title);
+                            prefs.setBridgeNewSession(false);
                             out.setText(targetLabel());
                             status("已选择：" + (title.isEmpty() ? "电脑默认" : title));
                         })

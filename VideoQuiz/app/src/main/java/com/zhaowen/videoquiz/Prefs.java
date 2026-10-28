@@ -66,6 +66,14 @@ public class Prefs {
         return sp.getString("bridgeSessionTitle", "");
     }
 
+    /** 每次上传都新建一个会话（视频试卷这类重任务用）。 */
+    public boolean bridgeNewSession() {
+        return sp.getBoolean("bridgeNewSession", false);
+    }
+
+    public void setBridgeNewSession(boolean on) {
+        sp.edit().putBoolean("bridgeNewSession", on).apply();
+    }
     public void saveBridgeSession(String id, String title) {
         sp.edit().putString("bridgeSessionId", id == null ? "" : id.trim())
                 .putString("bridgeSessionTitle", title == null ? "" : title.trim()).apply();
