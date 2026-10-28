@@ -67,6 +67,33 @@ function listFiles(dir, done) {
     }).filter(Boolean);
 }
 
+// 会话控制：把手机的请求透传给管理插件的确定性命令路由（不经过大模型）。
+const supervisorCommandUrl = supervisorUrl.replace(/\/chat\/?$/, '/command');
+const supervisorKey = () => String(process.env.VIDEOQUIZ_SUPERVISOR_KEY || '').trim();
+
+async function supervisorCommand(payload) {
+  const headers = { 'Content-Type': 'application/json' };
+  const key = supervisorKey();
+  if (key !== '') headers['x-supervisor-key'] = key;
+  const response = await fetch(supervisorCommandUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(15000),
+  });
+  const body = await response.json().catch(() => ({}));
+  return { status: response.status, body };
+}
+
+async function readJsonBody(req, limit) {
+  let raw = '';
+  for await (const chunk of req) {
+    raw += chunk.toString('utf8');
+    if (raw.length > limit) throw new Error('request too large');
+  }
+  return raw === '' ? {} : JSON.parse(raw);
+}
+
 function jobState(dir, job) {
   const done = readJson(join(dir, 'done.json'));
   const forwarding = readJson(join(dir, 'forwarding.json'));
@@ -81,39 +108,37 @@ function jobState(dir, job) {
   };
 }
 
-async function sendToSupervisor(id, job) {
+async function sendToSession(id, job) {
   const dir = jobPath(id);
   if (!dir || !existsSync(join(dir, 'job.json'))) throw new Error('job not found');
   if (existsSync(join(dir, 'forwarding.json')) || existsSync(join(dir, 'forwarded.json'))) return;
-  const marker = { startedAt: new Date().toISOString(), targetSessionId };
-  writeFileSync(join(dir, 'forwarding.json'), JSON.stringify(marker), 'utf8');
+
+  const session = typeof job.targetSessionId === 'string' && job.targetSessionId !== '' ? job.targetSessionId : targetSessionId;
+  writeFileSync(join(dir, 'forwarding.json'), JSON.stringify({ startedAt: new Date().toISOString(), targetSessionId: session }), 'utf8');
+
   try {
     const videoPath = join(dir, job.storedName);
     const resultsPath = join(dir, 'results');
     const text = [
-      `VideoQuiz 上传任务 ${id} 已完整保存到本机，请转发给当前处理会话。`,
-      `目标当前 Harness 会话 ID：${targetSessionId}`,
+      `VideoQuiz 上传任务 ${id} 已完整保存到本机。`,
       `视频绝对路径：${videoPath}`,
       `结果目录：${resultsPath}`,
-      `桥接完成回传地址：${completionUrl}/api/jobs/complete`,
-      `本机桥接辅助脚本：${join(here, 'task.ps1')}`,
       `回传服务地址：${completionUrl}`,
+      `本机桥接辅助脚本：${join(here, 'task.ps1')}`,
       `任务要求：${job.task}`,
-      `请使用 dsh_session_send，按上面的精确 session_id 将任务发入目标会话。目标会话运行本机 pwsh 的 task.ps1，参数 Operation=claim、BaseUrl=${completionUrl}、Id=${id}、IncludeVideoPath 领取任务，并取得绝对路径；然后使用 watch skill 读取视频、完成题目，在结果目录写入 PDF 和 TXT。完成后再次运行 task.ps1，参数 Operation=complete、BaseUrl=${completionUrl}、Id=${id}、Text=结果摘要、FilesJson='[{"name":"answers.pdf","mimeType":"application/pdf"},{"name":"answers.txt","mimeType":"text/plain"}]'。脚本从本机 token.txt 读取配对令牌并回传结果；禁止读取/展示/写入对话。不要新建其它会话，也不要改写视频源文件。`,
+      `请先运行本机 pwsh 的 task.ps1：Operation=claim、BaseUrl=${completionUrl}、Id=${id}、IncludeVideoPath，拿到路径后读取视频、完成题目，在结果目录写入 answers.pdf 与 answers.txt；完成后再次运行 task.ps1：Operation=complete、BaseUrl=${completionUrl}、Id=${id}、Text=结果摘要、FilesJson='[{"name":"answers.pdf","mimeType":"application/pdf"},{"name":"answers.txt","mimeType":"text/plain"}]'。脚本自行读取本机 token.txt，禁止读取/展示/写入对话。不要改写视频源文件。`,
     ].join('\n');
-    const response = await fetch(supervisorUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-      signal: AbortSignal.timeout(10000),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok || body.ok !== true) throw new Error(body.message || body.code || `management chat HTTP ${response.status}`);
+
+    const outcome = await supervisorCommand({ op: 'send', sessionId: session, text });
+    if (outcome.status !== 200 || outcome.body.ok !== true) {
+      throw new Error(outcome.body.message || outcome.body.code || `command HTTP ${outcome.status}`);
+    }
+
     writeFileSync(join(dir, 'forwarded.json'), JSON.stringify({
       forwardedAt: new Date().toISOString(),
-      supervisorSessionId: body.sessionId,
-      supervisorTitle: body.title,
-      targetSessionId,
+      targetSessionId: session,
+      targetTitle: outcome.body.title,
+      mode: 'command',
     }, null, 2), 'utf8');
   } catch (error) {
     try { unlinkSync(join(dir, 'forwarding.json')); } catch {}
@@ -121,7 +146,6 @@ async function sendToSupervisor(id, job) {
     throw error;
   }
 }
-
 const server = createServer(async (req, res) => {
   const startedAt = Date.now();
   try {
@@ -135,6 +159,41 @@ const server = createServer(async (req, res) => {
     }
     if (!auth(req)) return json(res, 401, { error: 'unauthorized' });
 
+    // ── 会话控制：列会话 / 新建会话 / 往指定会话投递 ──
+    if (req.method === 'GET' && url.pathname === '/api/sessions') {
+      try {
+        const outcome = await supervisorCommand({ op: 'list' });
+        return json(res, outcome.status === undefined ? 200 : outcome.status, outcome.body);
+      } catch (error) {
+        return json(res, 502, {
+          ok: false,
+          code: 'SUPERVISOR_UNREACHABLE',
+          message: '连不上管理插件的 /command：' + error.message,
+          hint: '确认 DSH 已重启并加载了新版 dsh-agent-supervisor（需要 POST /command 路由）。',
+        });
+      }
+    }
+
+    if (req.method === 'POST' && (url.pathname === '/api/sessions/start' || url.pathname === '/api/sessions/send')) {
+      let payload;
+      try {
+        payload = await readJsonBody(req, 32 * 1024);
+      } catch (error) {
+        return json(res, 400, { ok: false, code: 'BAD_JSON', message: error.message });
+      }
+      const op = url.pathname.endsWith('/start') ? 'start' : 'send';
+      try {
+        const outcome = await supervisorCommand({ ...payload, op });
+        return json(res, outcome.status === undefined ? 200 : outcome.status, outcome.body);
+      } catch (error) {
+        return json(res, 502, {
+          ok: false,
+          code: 'SUPERVISOR_UNREACHABLE',
+          message: '连不上管理插件的 /command：' + error.message,
+          hint: '确认 DSH 已重启并加载了新版 dsh-agent-supervisor（需要 POST /command 路由）。',
+        });
+      }
+    }
     if (req.method === 'POST' && url.pathname === '/api/jobs') {
       const length = Number(req.headers['content-length']);
       if (!Number.isSafeInteger(length) || length <= 0) return json(res, 411, { error: 'Content-Length is required' });
@@ -164,12 +223,16 @@ const server = createServer(async (req, res) => {
         if (received !== length) throw new Error(`length mismatch: expected ${length}, received ${received}`);
         renameSync(tmp, join(dir, storedName));
         mkdirSync(join(dir, 'results'), { recursive: true });
+        const wantedSession = String(req.headers['x-videoquiz-session-b64']
+          ? Buffer.from(String(req.headers['x-videoquiz-session-b64']), 'base64').toString('utf8')
+          : (req.headers['x-videoquiz-session'] || '')).trim();
         const task = {
           id,
           originalName: requestedName,
           storedName,
           size: received,
           contentType: String(req.headers['content-type'] || 'application/octet-stream'),
+          ...(wantedSession === '' ? {} : { targetSessionId: wantedSession }),
           task: String(req.headers['x-videoquiz-task-b64']
             ? Buffer.from(String(req.headers['x-videoquiz-task-b64']), 'base64').toString('utf8')
             : (req.headers['x-videoquiz-task'] || '转录视频中的试题，保留公式与题号；生成试卷 PDF 和答案 PDF，并说明识别不确定处。')).slice(0, 2000),
@@ -179,7 +242,7 @@ const server = createServer(async (req, res) => {
         writeFileSync(join(dir, 'job.json'), JSON.stringify(task, null, 2), 'utf8');
         let forwarded = false;
         try {
-          await sendToSupervisor(id, task);
+          await sendToSession(id, task);
           forwarded = true;
         } catch (error) {
           console.warn(`job ${id} uploaded but management-session notification failed: ${error.message}`);
@@ -206,7 +269,7 @@ const server = createServer(async (req, res) => {
       if (!job) return json(res, 404, { error: 'job not found' });
       if (existsSync(join(dir, 'done.json'))) return json(res, 409, { error: 'job already completed' });
       try {
-        await sendToSupervisor(id, job);
+        await sendToSession(id, job);
         return json(res, 200, { ok: true, id, status: 'forwarded' });
       } catch (error) {
         return json(res, 502, { ok: false, id, status: 'notification_failed', error: error.message });

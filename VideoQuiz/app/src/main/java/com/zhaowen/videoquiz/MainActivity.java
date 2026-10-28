@@ -360,7 +360,11 @@ public class MainActivity extends AppCompatActivity {
         c.setRequestProperty("Content-Type", "application/octet-stream");
         c.setRequestProperty("X-Video-Name-B64", android.util.Base64.encodeToString(
                 name.getBytes(java.nio.charset.StandardCharsets.UTF_8), android.util.Base64.NO_WRAP));
-        c.setRequestProperty("X-VideoQuiz-Task-B64", android.util.Base64.encodeToString(
+        String targetSession = prefs.bridgeSessionId();
+        if (!targetSession.isEmpty()) {
+            c.setRequestProperty("X-VideoQuiz-Session-B64", android.util.Base64.encodeToString(
+                    targetSession.getBytes(java.nio.charset.StandardCharsets.UTF_8), android.util.Base64.NO_WRAP));
+        }        c.setRequestProperty("X-VideoQuiz-Task-B64", android.util.Base64.encodeToString(
                 "请读取视频内容并完成其中的试题，严格保留题号、原题文字及公式；先给出清晰的逐题结果和答案，标注不确定项，并生成可下载的 PDF 与 TXT 结果文件。"
                         .getBytes(java.nio.charset.StandardCharsets.UTF_8), android.util.Base64.NO_WRAP));
         try (InputStream in = staged == null ? getContentResolver().openInputStream(videoUri) : new java.io.FileInputStream(staged);
@@ -1322,6 +1326,23 @@ public class MainActivity extends AppCompatActivity {
         pcBox.setOrientation(LinearLayout.VERTICAL);
         EditText eBridge = field(pcBox, "电脑地址，如 http://10.0.0.5:8765", prefs.bridgeUrl());
         EditText eToken = field(pcBox, "配对令牌（电脑端 bridge/data/token.txt）", prefs.bridgeToken());
+        TextView tvTarget = new TextView(this);
+        tvTarget.setTextSize(12);
+        tvTarget.setTextColor(getColorCompat(R.color.text_secondary));
+        tvTarget.setPadding(0, (int) (12 * dp), 0, 0);
+        tvTarget.setText(targetLabel());
+        com.google.android.material.button.MaterialButton btnTarget =
+                new com.google.android.material.button.MaterialButton(this, null,
+                        com.google.android.material.R.attr.materialButtonOutlinedStyle);
+        btnTarget.setText("选择目标会话");
+        btnTarget.setTextSize(13);
+        LinearLayout.LayoutParams tLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        tLp.topMargin = (int) (8 * dp);
+        pcBox.addView(tvTarget, tLp);
+        pcBox.addView(btnTarget, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        btnTarget.setOnClickListener(v -> chooseSession(tvTarget));
         TextView tvTest = new TextView(this);
         tvTest.setTextSize(12);
         tvTest.setTextColor(getColorCompat(R.color.text_secondary));
@@ -1379,6 +1400,50 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 
+    /** 设置里显示当前选的投递目标。 */
+    private String targetLabel() {
+        String title = prefs.bridgeSessionTitle();
+        return title.isEmpty() ? "目标会话：电脑默认" : "目标会话：" + title;
+    }
+
+    /** 从电脑拉会话列表，选一个作为上传后的投递目标。 */
+    private void chooseSession(TextView out) {
+        out.setText("正在读取电脑上的会话…");
+        new Thread(() -> {
+            try {
+                JSONObject payload = bridgeRequest("GET", "/api/sessions", null, null, 15000);
+                JSONArray arr = payload.optJSONArray("sessions");
+                final ArrayList<String> ids = new ArrayList<>();
+                final ArrayList<String> labels = new ArrayList<>();
+                ids.add("");
+                labels.add("不指定（用电脑默认会话）");
+                if (arr != null) {
+                    for (int i = 0; i < arr.length(); i++) {
+                        JSONObject o = arr.getJSONObject(i);
+                        String sid = o.optString("sessionId", "");
+                        if (sid.isEmpty()) continue;
+                        String title = o.optString("title", sid);
+                        ids.add(sid);
+                        labels.add(title + (o.optBoolean("running", false) ? " · 运行中" : ""));
+                    }
+                }
+                final String[] items = labels.toArray(new String[0]);
+                ui.post(() -> new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                        .setTitle("投递到哪个会话")
+                        .setItems(items, (d, which) -> {
+                            String sid = ids.get(which);
+                            String title = which == 0 ? "" : labels.get(which);
+                            prefs.saveBridgeSession(sid, title);
+                            out.setText(targetLabel());
+                            status("已选择：" + (title.isEmpty() ? "电脑默认" : title));
+                        })
+                        .show());
+            } catch (Throwable e) {
+                final String message = "读取会话失败：" + (e.getMessage() == null ? e.toString() : e.getMessage());
+                ui.post(() -> out.setText(message));
+            }
+        }, "session-picker").start();
+    }
     /** 在设置里当场验证电脑桥接：先探活，再用令牌验一次鉴权，把可能的坑说清楚。 */
     private void testBridge(String rawUrl, String rawToken, TextView out) {
         String url = rawUrl == null ? "" : rawUrl.trim().replaceAll("/+$", "");

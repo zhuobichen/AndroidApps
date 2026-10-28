@@ -57,6 +57,20 @@ public class Prefs {
         sp.edit().putString("bridgeJobId", id).apply();
     }
 
+    /** 上传后投递到哪个会话；空串表示用电脑端的默认目标。 */
+    public String bridgeSessionId() {
+        return sp.getString("bridgeSessionId", "");
+    }
+
+    public String bridgeSessionTitle() {
+        return sp.getString("bridgeSessionTitle", "");
+    }
+
+    public void saveBridgeSession(String id, String title) {
+        sp.edit().putString("bridgeSessionId", id == null ? "" : id.trim())
+                .putString("bridgeSessionTitle", title == null ? "" : title.trim()).apply();
+    }
+
     public void save(String base, String key, String model) {
         sp.edit().putString("base", base.trim()).putString("key", key.trim())
                 .putString("model", model.trim()).apply();
