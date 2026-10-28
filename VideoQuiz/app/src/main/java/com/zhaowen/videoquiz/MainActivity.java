@@ -1185,6 +1185,16 @@ public class MainActivity extends AppCompatActivity {
 
     private void makePdf() {
         if (prefs.bridgeMode() && !bridgeFiles.isEmpty()) {
+            File pdf = lastPdf;
+            if (pdf == null) {
+                for (File file : bridgeFiles) {
+                    if (file.getName().toLowerCase().endsWith(".pdf")) { pdf = file; break; }
+                }
+            }
+            if (pdf != null && pdf.isFile()) {
+                openPdf(pdf);
+                return;
+            }
             ArrayList<Uri> streams = new ArrayList<>();
             for (File file : bridgeFiles) streams.add(FileProvider.getUriForFile(this,
                     getPackageName() + ".fileprovider", file));
@@ -1205,7 +1215,7 @@ public class MainActivity extends AppCompatActivity {
                     ui.post(() -> {
                         status("已生成：" + f.getName());
                         setBusy(false);
-                        sharePdf(f);
+                        openPdf(f);
                     });
                 } catch (Throwable e) {
                     status("生成失败：" + e.getMessage());
@@ -1316,6 +1326,17 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "分享失败：" + e.getMessage(), Toast.LENGTH_LONG).show();
         }
     }
+    /** 内置阅读器优先；打不开再退回系统应用。 */
+    private void openPdf(File f) {
+        try {
+            Intent intent = new Intent(this, PdfViewerActivity.class);
+            intent.putExtra(PdfViewerActivity.EXTRA_PATH, f.getAbsolutePath());
+            startActivity(intent);
+        } catch (Throwable e) {
+            sharePdf(f);
+        }
+    }
+
     private void sharePdf(File f) {
         try {
             Uri u = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", f);

@@ -7,7 +7,7 @@
         android:allowBackup="false"
         android:usesCleartextTraffic="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="视频成卷"
+        android:label="卷灵"
         android:supportsRtl="true"
         android:theme="@style/Theme.VideoQuiz">
 
@@ -20,6 +20,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".PdfViewerActivity"
+            android:exported="false" />
 
         <activity
             android:name=".MainActivity"

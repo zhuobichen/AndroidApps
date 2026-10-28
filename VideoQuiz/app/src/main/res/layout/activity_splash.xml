@@ -24,7 +24,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="22dp"
         android:letterSpacing="0.04"
-        android:text="视频成卷"
+        android:text="卷灵"
         android:textColor="#FFFFFF"
         android:textSize="26sp"
         android:textStyle="bold" />
@@ -34,7 +34,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
         android:alpha="0.85"
-        android:text="试卷录像 · 一键成卷"
+        android:text="拍一段录像，还你一张卷"
         android:textColor="#FFFFFF"
         android:textSize="13sp" />
 
