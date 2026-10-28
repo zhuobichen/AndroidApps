@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { createReadStream, createWriteStream, mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, statSync, unlinkSync } from 'node:fs';
+import { createReadStream, createWriteStream, mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, statSync, unlinkSync, readdirSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { randomBytes, timingSafeEqual, randomUUID } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
@@ -67,6 +67,27 @@ function listFiles(dir, done) {
     }).filter(Boolean);
 }
 
+// 工作区范围：会话语义上属于某个工作区（DSH 的 sessions 目录按 cwd 分组）。
+// 桥接只允许列 / 投递「当前工作区」里的会话，避免手机把任务扔到别的项目去。
+const sessionsRoot = process.env.VIDEOQUIZ_SESSIONS_ROOT
+  || join(process.env.DSH_HOME || 'D:/github_project/ZhaoWen_GitHub维护/dsh/home', 'sessions');
+const anchorSessionId = process.env.VIDEOQUIZ_ANCHOR_SESSION || 'session-3b1e209a-14ac-4002-a31f-4efdc4f9064c';
+const workspacePath = process.env.VIDEOQUIZ_WORKSPACE || 'D:\\github_project\\ZhaoWen_GitHub维护';
+
+/** 当前工作区的会话目录（以锚点会话所在的组为准）；找不到就返回 null，表示不做范围限制。 */
+function workspaceSessionIds() {
+  try {
+    for (const group of readdirSync(sessionsRoot)) {
+      const groupDir = join(sessionsRoot, group);
+      if (!existsSync(join(groupDir, anchorSessionId))) continue;
+      const ids = readdirSync(groupDir).filter(name => name.startsWith('session-'));
+      return { group, ids };
+    }
+  } catch {
+    // 读不到就退回「不限制」，并在返回里如实标 scope=unrestricted
+  }
+  return null;
+}
 // 会话控制：把手机的请求透传给管理插件的确定性命令路由（不经过大模型）。
 const supervisorCommandUrl = supervisorUrl.replace(/\/chat\/?$/, '/command');
 const supervisorKey = () => String(process.env.VIDEOQUIZ_SUPERVISOR_KEY || '').trim();
@@ -113,7 +134,15 @@ async function sendToSession(id, job) {
   if (!dir || !existsSync(join(dir, 'job.json'))) throw new Error('job not found');
   if (existsSync(join(dir, 'forwarding.json')) || existsSync(join(dir, 'forwarded.json'))) return;
 
-  const session = typeof job.targetSessionId === 'string' && job.targetSessionId !== '' ? job.targetSessionId : targetSessionId;
+  const scope = workspaceSessionIds();
+  let session = typeof job.targetSessionId === 'string' && job.targetSessionId !== '' ? job.targetSessionId : targetSessionId;
+  // 只在本工作区内投递：目标越界就退回默认会话，并在记录里写明原因
+  let fallbackNote;
+  if (scope !== null && !scope.ids.includes(session)) {
+    fallbackNote = `requested ${session} is outside workspace ${scope.group}`;
+    session = scope.ids.includes(targetSessionId) ? targetSessionId : scope.ids[0];
+  }
+  if (!session) throw new Error('no session available in workspace');
   writeFileSync(join(dir, 'forwarding.json'), JSON.stringify({ startedAt: new Date().toISOString(), targetSessionId: session }), 'utf8');
 
   try {
@@ -139,6 +168,7 @@ async function sendToSession(id, job) {
       targetSessionId: session,
       targetTitle: outcome.body.title,
       mode: 'command',
+      ...(fallbackNote === undefined ? {} : { fallbackNote }),
     }, null, 2), 'utf8');
   } catch (error) {
     try { unlinkSync(join(dir, 'forwarding.json')); } catch {}
@@ -162,8 +192,14 @@ const server = createServer(async (req, res) => {
     // ── 会话控制：列会话 / 新建会话 / 往指定会话投递 ──
     if (req.method === 'GET' && url.pathname === '/api/sessions') {
       try {
+        const scope = workspaceSessionIds();
         const outcome = await supervisorCommand({ op: 'list' });
-        return json(res, outcome.status === undefined ? 200 : outcome.status, outcome.body);
+        if (outcome.status === 200 && outcome.body.ok === true && scope !== null) {
+          const allowed = new Set(scope.ids);
+          const sessions = (Array.isArray(outcome.body.sessions) ? outcome.body.sessions : []).filter(s => allowed.has(s.sessionId));
+          return json(res, 200, { ok: true, count: sessions.length, workspace: scope.group, scope: 'workspace', sessions });
+        }
+        return json(res, outcome.status === undefined ? 200 : outcome.status, { ...outcome.body, scope: 'unrestricted' });
       } catch (error) {
         return json(res, 502, {
           ok: false,
@@ -182,8 +218,20 @@ const server = createServer(async (req, res) => {
         return json(res, 400, { ok: false, code: 'BAD_JSON', message: error.message });
       }
       const op = url.pathname.endsWith('/start') ? 'start' : 'send';
+      if (op === 'send') {
+        const scope = workspaceSessionIds();
+        const sid = typeof payload.sessionId === 'string' ? payload.sessionId : '';
+        if (scope !== null && sid !== '' && !scope.ids.includes(sid)) {
+          return json(res, 403, {
+            ok: false,
+            code: 'OUT_OF_WORKSPACE',
+            message: '这个会话不在当前工作区（' + scope.group + '）里，桥接不往其它项目投递。',
+            workspace: scope.group,
+          });
+        }
+      }
       try {
-        const outcome = await supervisorCommand({ ...payload, op });
+        const outcome = await supervisorCommand({ ...payload, op: op === 'start' ? 'start' : 'send', ...(op === 'start' ? { cwd: workspacePath } : {}) });
         return json(res, outcome.status === undefined ? 200 : outcome.status, outcome.body);
       } catch (error) {
         return json(res, 502, {
