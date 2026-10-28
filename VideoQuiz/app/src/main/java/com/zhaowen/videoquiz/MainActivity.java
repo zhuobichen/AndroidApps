@@ -23,6 +23,11 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -50,11 +55,14 @@ public class MainActivity extends AppCompatActivity {
     }
     private File lastPdf;
     private boolean busy = false;
+    private volatile boolean bridgeCancelled = false;
+    private String activeBridgeJob;
+    private final List<File> bridgeFiles = new ArrayList<>();
     private int lastTotalFrames = 0;
     private int lastKeptFrames = 0;
     private final Map<String, Integer> variantConflicts = new java.util.HashMap<>();
 
-    private TextView tvVideo, tvStatus, tvResult;
+    private TextView tvVideo, tvStatus, tvResult, tvPhase, tvEndpoint;
     private ProgressBar progress;
 
     private final ActivityResultLauncher<String[]> picker =
@@ -79,6 +87,8 @@ public class MainActivity extends AppCompatActivity {
         tvVideo = findViewById(R.id.tvVideo);
         tvStatus = findViewById(R.id.tvStatus);
         tvResult = findViewById(R.id.tvResult);
+        tvPhase = findViewById(R.id.tvPhase);
+        tvEndpoint = findViewById(R.id.tvEndpoint);
         progress = findViewById(R.id.progress);
 
         findViewById(R.id.btnPick).setOnClickListener(v -> picker.launch(new String[]{"video/*"}));
@@ -116,11 +126,55 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        if (prefs.key().isEmpty()) status("先在「接口设置」里填 API Key");
+        if (prefs.bridgeMode()) {
+            phase("等待选择视频");
+            showEndpoint();
+            status("整段视频一次性上传到电脑，不分片。");
+        } else {
+            showEndpoint();
+            if (prefs.key().isEmpty()) phase("先在设置里填 API Key");
+        }
+    }
+
+    /** 顶栏副标题：显示当前要连的电脑地址，默认占位地址会标出来。 */
+    private void showEndpoint() {
+        if (tvEndpoint == null) return;
+        String url = prefs.bridgeUrl() == null ? "" : prefs.bridgeUrl().trim();
+        if (url.isEmpty()) {
+            tvEndpoint.setText("未配置电脑地址 · 点右侧「设置」");
+            return;
+        }
+        boolean placeholder = url.contains("192.168.1.2");
+        tvEndpoint.setText(placeholder ? "地址还是默认的 " + url + " · 点「设置」改成电脑 IP" : "电脑 · " + url);
+        tvEndpoint.setTextColor(getColorCompat(placeholder ? R.color.warning : R.color.text_tertiary));
+    }
+
+    private int getColorCompat(int resId) {
+        return android.os.Build.VERSION.SDK_INT >= 23 ? getColor(resId) : 0xFF5B6472;
+    }
+
+    /** 状态卡标题：一句话说清现在处于哪一步。 */
+    private void phase(String s) {
+        ui.post(() -> {
+            if (tvPhase != null) tvPhase.setText(s);
+        });
     }
 
     private void status(String s) {
-        ui.post(() -> tvStatus.setText(s));
+        ui.post(() -> tvStatus.setText(redact(s)));
+    }
+
+    /** 配对令牌一律去掉首尾空白：从 txt 里复制很容易带上换行，塞进 HTTP 头会直接抛异常。 */
+    private String bridgeTokenValue() {
+        String t = prefs.bridgeToken();
+        return t == null ? "" : t.trim();
+    }
+
+    /** 回显给用户的文字里不能带令牌原文。 */
+    private String redact(String text) {
+        if (text == null) return null;
+        String t = bridgeTokenValue();
+        return t.isEmpty() ? text : text.replace(t, "***");
     }
 
     private void setBusy(boolean b) {
@@ -129,15 +183,285 @@ public class MainActivity extends AppCompatActivity {
             progress.setVisibility(b ? View.VISIBLE : View.GONE);
             findViewById(R.id.btnRun).setEnabled(!b && videoUri != null);
             findViewById(R.id.btnSolve).setEnabled(!b && !questions.isEmpty() && !prefs.pageMode());
-            boolean hasOut = prefs.pageMode() ? !pages.isEmpty() : !questions.isEmpty();
+            boolean hasOut = prefs.bridgeMode() ? !bridgeFiles.isEmpty()
+                    : (prefs.pageMode() ? !pages.isEmpty() : !questions.isEmpty());
             findViewById(R.id.btnPdf).setEnabled(!b && hasOut);
         });
+    }
+
+    // ---------- 局域网桥接：整文件单次上传，轮询 Harness 回传 ----------
+
+    private void runBridgeMode() {
+        if (prefs.bridgeUrl().isEmpty() || bridgeTokenValue().isEmpty()) {
+            Toast.makeText(this, "请先配置电脑地址和配对令牌", Toast.LENGTH_LONG).show();
+            showSettings();
+            return;
+        }
+        bridgeCancelled = false;
+        setBusy(true);
+        progress.setIndeterminate(false);
+        progress.setProgress(0);
+        progress.setVisibility(View.VISIBLE);
+        phase("准备上传…");
+        tvResult.setText("正在把整段视频一次性上传到电脑，不分片。上传完成后电脑会处理，结果自动下载回来。");
+        new Thread(() -> {
+            try {
+                String savedJob = prefs.bridgeJobId();
+                if (!savedJob.isEmpty()) {
+                    activeBridgeJob = savedJob;
+                    ui.post(() -> tvResult.setText("正在恢复电脑上的任务，视频不用重新上传。"));
+                    phase("恢复上次任务");
+                    waitForBridgeJob(savedJob);
+                    return;
+                }
+                String name = getDisplayName(videoUri);
+                long length;
+                try (android.content.res.AssetFileDescriptor afd = getContentResolver().openAssetFileDescriptor(videoUri, "r")) {
+                    length = afd == null ? -1 : afd.getLength();
+                }
+                File staged = null;
+                if (length <= 0) {
+                    phase("读取文件信息…");
+                    status("这个视频拿不到长度，先在本机复制一份再整传。");
+                    staged = stageVideoForLength(name);
+                    length = staged.length();
+                }
+                JSONObject accepted;
+                try { accepted = bridgeUpload(name, length, staged); }
+                finally { if (staged != null) staged.delete(); }
+                String id = accepted.getString("id");
+                activeBridgeJob = id;
+                prefs.setBridgeJobId(id);
+                ui.post(() -> {
+                    progress.setProgress(100);
+                    tvResult.setText("视频已完整上传到电脑。\n\n任务号：" + id + "\n\n现在等电脑处理，完成后会自动下载结果，不用你操作。");
+                });
+                phase("已上传 · 等待电脑处理");
+                status("整段视频已送达，等待 Harness 读取");
+                waitForBridgeJob(id);
+            } catch (Throwable e) {
+                String raw = e.getMessage() == null ? e.toString() : e.getMessage();
+                String hint = raw.contains("192.168.1.2")
+                        ? "\n\n电脑地址还是模板里的 192.168.1.2，点右上角「设置」改成电脑的局域网 IP（启动桥接时终端会打印）。"
+                        : (raw.contains("timed out") || raw.contains("ETIMEDOUT") || raw.contains("failed to connect")
+                        ? "\n\n连不上电脑：确认桥接终端还开着、手机和电脑在同一个 Wi-Fi、Windows 防火墙放行了 8765 端口。"
+                        : "");
+                phase("上传失败");
+                status("上传失败 · 详见下方");
+                ui.post(() -> tvResult.setText(redact("上传失败：" + raw + hint)));
+            } finally {
+                ui.post(() -> {
+                    progress.setIndeterminate(false);
+                    if (!busy) progress.setVisibility(View.GONE);
+                });
+                setBusy(false);
+            }
+        }, "videoquiz-bridge").start();
+    }
+
+    private void waitForBridgeJob(String id) throws Exception {
+        int polls = 0;
+        long started = System.currentTimeMillis();
+        while (!bridgeCancelled) {
+            Thread.sleep(2500);
+            JSONObject state = bridgeRequest("GET", "/api/jobs/" + id + "/status", null, null, 0);
+            String phase = state.optString("status", "uploaded");
+            String message = state.optString("message", "等待电脑处理");
+            polls++;
+            long seconds = (System.currentTimeMillis() - started) / 1000;
+            String waited = seconds < 60 ? seconds + " 秒" : (seconds / 60) + " 分 " + (seconds % 60) + " 秒";
+            switch (phase) {
+                case "complete":
+                    phase("处理完成");
+                    break;
+                case "processing":
+                    phase("电脑正在处理");
+                    break;
+                case "forwarded":
+                    phase("已交给电脑处理");
+                    break;
+                case "notification_failed":
+                    phase("已送达，但通知会话失败");
+                    break;
+                default:
+                    phase("排队等待处理");
+            }
+            status(message + " · 已等待 " + waited);
+            if ("notification_failed".equals(phase)) {
+                String retry = "电脑收到了视频，但没能通知处理会话：" + state.optString("notificationError", "未知错误");
+                ui.post(() -> tvResult.setText(retry + "\n\n视频已保存在电脑上。检查电脑端桥接服务后可以重试通知。\n\n任务号：" + id));
+            }
+            if (!"complete".equals(phase)) continue;
+            JSONObject result = bridgeRequest("GET", "/api/jobs/" + id + "/result", null, null, 0);
+            String text = result.optString("text", "");
+            JSONArray files = result.optJSONArray("files");
+            bridgeFiles.clear();
+            if (files != null) {
+                for (int i = 0; i < files.length(); i++) {
+                    JSONObject f = files.getJSONObject(i);
+                    File out = new File(getExternalFilesDir(null), id + "_" + f.getString("name"));
+                    bridgeDownload(id, f.getString("name"), out);
+                    bridgeFiles.add(out);
+                    if (f.optString("mimeType").equals("application/pdf") && lastPdf == null) lastPdf = out;
+                }
+            }
+            activeBridgeJob = null;
+            prefs.setBridgeJobId("");
+            String delivered = text.isEmpty() ? "处理完成，结果文件已下载。" : text;
+            ui.post(() -> {
+                tvResult.setText(delivered);
+                findViewById(R.id.btnPdf).setEnabled(!bridgeFiles.isEmpty());
+                progress.setProgress(100);
+            });
+            status("结果已保存到手机，可点下方「打开结果 PDF」查看");
+            return;
+        }
+        if (bridgeCancelled) {
+            phase("已停止等待");
+            status("电脑上的任务不受影响，重新点「上传到电脑」可继续查询");
+        }
+    }
+
+    private File stageVideoForLength(String name) throws Exception {
+        File staged = new File(getCacheDir(), "video-upload-" + System.currentTimeMillis() + "-" + name.replaceAll("[^A-Za-z0-9._-]", "_"));
+        try (InputStream in = getContentResolver().openInputStream(videoUri);
+             OutputStream out = new java.io.FileOutputStream(staged)) {
+            if (in == null) throw new IllegalStateException("无法打开所选视频");
+            byte[] buffer = new byte[256 * 1024];
+            int n;
+            while ((n = in.read(buffer)) != -1) {
+                if (bridgeCancelled) throw new InterruptedException("upload cancelled");
+                out.write(buffer, 0, n);
+            }
+        } catch (Throwable t) {
+            staged.delete();
+            throw t;
+        }
+        return staged;
+    }
+
+    private JSONObject bridgeUpload(String name, long length, File staged) throws Exception {
+        URL url = new URL(prefs.bridgeUrl() + "/api/jobs");
+        HttpURLConnection c = (HttpURLConnection) url.openConnection();
+        c.setRequestMethod("POST");
+        c.setConnectTimeout(20000);
+        c.setReadTimeout(0);
+        c.setDoOutput(true);
+        c.setFixedLengthStreamingMode(length);
+        c.setRequestProperty("Authorization", "Bearer " + bridgeTokenValue());
+        c.setRequestProperty("Content-Type", "application/octet-stream");
+        c.setRequestProperty("X-Video-Name-B64", android.util.Base64.encodeToString(
+                name.getBytes(java.nio.charset.StandardCharsets.UTF_8), android.util.Base64.NO_WRAP));
+        c.setRequestProperty("X-VideoQuiz-Task-B64", android.util.Base64.encodeToString(
+                "请读取视频内容并完成其中的试题，严格保留题号、原题文字及公式；先给出清晰的逐题结果和答案，标注不确定项，并生成可下载的 PDF 与 TXT 结果文件。"
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8), android.util.Base64.NO_WRAP));
+        try (InputStream in = staged == null ? getContentResolver().openInputStream(videoUri) : new java.io.FileInputStream(staged);
+             OutputStream out = c.getOutputStream()) {
+            if (in == null) throw new IllegalStateException("无法打开所选视频");
+            byte[] buffer = new byte[256 * 1024];
+            long sent = 0;
+            int read;
+            int lastShown = -1;
+            long startAt = System.currentTimeMillis();
+            while ((read = in.read(buffer)) != -1) {
+                if (bridgeCancelled) throw new InterruptedException("upload cancelled");
+                out.write(buffer, 0, read);
+                sent += read;
+                int percent = (int) (sent * 100L / length);
+                if (percent != lastShown) {
+                    lastShown = percent;
+                    final int pct = percent;
+                    final long done = sent;
+                    final long total = length;
+                    long elapsedMs = Math.max(1, System.currentTimeMillis() - startAt);
+                    long speed = done * 1000L / elapsedMs;
+                    long remainMs = speed > 0 ? (total - done) * 1000L / speed : 0;
+                    ui.post(() -> {
+                        progress.setProgress(pct);
+                        if (pct > 0 && pct < 100) phase("上传中 " + pct + "%");
+                    });
+                    status(formatBytes(done) + " / " + formatBytes(total)
+                            + " · " + formatBytes(speed) + "/s"
+                            + (pct >= 100 ? " · 等待电脑确认" : " · 约剩 " + Math.max(1, remainMs / 1000) + " 秒"));
+                }
+            }
+            if (sent != length) throw new IllegalStateException("文件读取长度变化：" + sent + " / " + length);
+        }
+        int code = c.getResponseCode();
+        String body = readHttpBody(c, code);
+        c.disconnect();
+        if (code != 201) throw new IllegalStateException("电脑返回 " + code + "：" + body);
+        return new JSONObject(body);
+    }
+
+    private JSONObject bridgeRequest(String method, String path, String body, String contentType, int timeout) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(prefs.bridgeUrl() + path).openConnection();
+        c.setRequestMethod(method);
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(timeout == 0 ? 30000 : timeout);
+        c.setRequestProperty("Authorization", "Bearer " + bridgeTokenValue());
+        if (body != null) {
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", contentType == null ? "application/json" : contentType);
+            try (OutputStream out = c.getOutputStream()) { out.write(body.getBytes(java.nio.charset.StandardCharsets.UTF_8)); }
+        }
+        int code = c.getResponseCode();
+        String response = readHttpBody(c, code);
+        c.disconnect();
+        if (code != 200) throw new IllegalStateException("电脑返回 " + code + "：" + response);
+        return new JSONObject(response);
+    }
+
+    private String readHttpBody(HttpURLConnection c, int code) throws Exception {
+        InputStream stream = code >= 400 ? c.getErrorStream() : c.getInputStream();
+        if (stream == null) return "";
+        try (InputStream in = stream; java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int n;
+            while ((n = in.read(buffer)) != -1) bytes.write(buffer, 0, n);
+            return bytes.toString(java.nio.charset.StandardCharsets.UTF_8.name());
+        }
+    }
+
+    private void bridgeDownload(String id, String name, File target) throws Exception {
+        String encoded = URLEncoder.encode(name, "UTF-8").replace("+", "%20");
+        HttpURLConnection c = (HttpURLConnection) new URL(prefs.bridgeUrl() + "/api/jobs/" + id + "/files/" + encoded).openConnection();
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(120000);
+        c.setRequestProperty("Authorization", "Bearer " + bridgeTokenValue());
+        int code = c.getResponseCode();
+        if (code != 200) throw new IllegalStateException("下载回传文件失败：HTTP " + code);
+        File parent = target.getParentFile();
+        if (parent != null) parent.mkdirs();
+        try (InputStream in = c.getInputStream(); OutputStream out = new java.io.FileOutputStream(target)) {
+            byte[] buffer = new byte[128 * 1024];
+            int n;
+            while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+        } finally { c.disconnect(); }
+    }
+
+    private String getDisplayName(Uri uri) {
+        String name = null;
+        try (android.database.Cursor cursor = getContentResolver().query(uri,
+                new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) name = cursor.getString(0);
+        } catch (Throwable ignored) {}
+        return name == null || name.isEmpty() ? "video.mp4" : name;
+    }
+
+    private static String formatBytes(long bytes) {
+        if (bytes < 1024 * 1024) return (bytes / 1024) + " KB";
+        return String.format(java.util.Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0));
     }
 
     // ---------- 识别：抽帧 → 逐帧送模型 ----------
 
     private void run() {
         if (busy || videoUri == null) return;
+        if (prefs.bridgeMode()) {
+            runBridgeMode();
+            return;
+        }
         if (prefs.key().isEmpty()) {
             Toast.makeText(this, "先填 API Key", Toast.LENGTH_SHORT).show();
             showSettings();
@@ -631,7 +955,7 @@ public class MainActivity extends AppCompatActivity {
                 final java.util.Set<String> seenLines = new java.util.HashSet<>();
                 int kept = FrameSampler.sample(this, videoUri, 1, 40, (bmp, t, sharp, idx, total) -> {
                     try {
-                        String page = client.transcribePage(bmp);
+                        String page = PageTranscriber.transcribe(client, bmp);
                         if (page != null && page.trim().length() > 60) {
                             String p = page.trim();
                             // 跨页去重：已经出现过的行不再重复输出
@@ -693,6 +1017,17 @@ public class MainActivity extends AppCompatActivity {
                 ui.post(() -> {
                     pages.clear();
                     pages.addAll(collected);
+                    try {
+                        StringBuilder dump = new StringBuilder();
+                        for (int i = 0; i < pages.size(); i++) {
+                            dump.append("=== 第 ").append(i + 1).append(" 页 (").append(pages.get(i).length()).append(" 字) ===\n")
+                                .append(pages.get(i)).append("\n\n");
+                        }
+                        java.io.FileOutputStream fos = new java.io.FileOutputStream(
+                                new java.io.File(getFilesDir(), "pages.txt"));
+                        fos.write(dump.toString().getBytes("UTF-8"));
+                        fos.close();
+                    } catch (Throwable ignored) {}
                     progress.setProgress(100);
                     if (pages.isEmpty()) {
                         tvResult.setText("没有识别到内容。视频可能太糊或画面里没有文字。");
@@ -794,6 +1129,17 @@ public class MainActivity extends AppCompatActivity {
     // ---------- PDF ----------
 
     private void makePdf() {
+        if (prefs.bridgeMode() && !bridgeFiles.isEmpty()) {
+            ArrayList<Uri> streams = new ArrayList<>();
+            for (File file : bridgeFiles) streams.add(FileProvider.getUriForFile(this,
+                    getPackageName() + ".fileprovider", file));
+            Intent intent = new Intent(Intent.ACTION_SEND_MULTIPLE);
+            intent.setType("application/octet-stream");
+            intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, streams);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(intent, "打开或分享 Harness 回传文件"));
+            return;
+        }
         if (prefs.pageMode()) {
             if (pages.isEmpty()) return;
             setBusy(true);
@@ -931,33 +1277,165 @@ public class MainActivity extends AppCompatActivity {
     // ---------- 设置 ----------
 
     private void showSettings() {
+        float dp = getResources().getDisplayMetrics().density;
+        int pad = (int) (20 * dp);
+
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        int pad = (int) (20 * getResources().getDisplayMetrics().density);
-        box.setPadding(pad, pad / 2, pad, 0);
+        box.setPadding(pad, (int) (8 * dp), pad, 0);
 
-        EditText eBase = field(box, "接口地址", prefs.base());
-        EditText eKey = field(box, "API Key", prefs.key());
-        EditText eModel = field(box, "模型名", prefs.model());
+        // ── 模式切换：电脑 / 云端，只显示对应那一组字段 ──
+        com.google.android.material.button.MaterialButtonToggleGroup modes =
+                new com.google.android.material.button.MaterialButtonToggleGroup(this);
+        modes.setSingleSelection(true);
+        modes.setSelectionRequired(true);
+        modes.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        android.widget.CheckBox cb = new android.widget.CheckBox(this);
-        cb.setText("整页模式（数学/公式卷：整页转录为 LaTeX，不自动解题）");
-        cb.setChecked(prefs.pageMode());
-        cb.setTextSize(12);
-        box.addView(cb);
+        com.google.android.material.button.MaterialButton bPc =
+                new com.google.android.material.button.MaterialButton(this, null,
+                        com.google.android.material.R.attr.materialButtonOutlinedStyle);
+        bPc.setId(View.generateViewId());
+        bPc.setText("电脑 Harness");
+        bPc.setTextSize(13);
+        com.google.android.material.button.MaterialButton bCloud =
+                new com.google.android.material.button.MaterialButton(this, null,
+                        com.google.android.material.R.attr.materialButtonOutlinedStyle);
+        bCloud.setId(View.generateViewId());
+        bCloud.setText("云端 API");
+        bCloud.setTextSize(13);
+        modes.addView(bPc, new com.google.android.material.button.MaterialButtonToggleGroup.LayoutParams(0, -2, 1f));
+        modes.addView(bCloud, new com.google.android.material.button.MaterialButtonToggleGroup.LayoutParams(0, -2, 1f));
+        box.addView(modes);
+        modes.check(prefs.bridgeMode() ? bPc.getId() : bCloud.getId());
+
+        // ── 电脑模式 ──
+        LinearLayout pcBox = new LinearLayout(this);
+        pcBox.setOrientation(LinearLayout.VERTICAL);
+        EditText eBridge = field(pcBox, "电脑地址，如 http://10.0.0.5:8765", prefs.bridgeUrl());
+        EditText eToken = field(pcBox, "配对令牌（电脑端 bridge/data/token.txt）", prefs.bridgeToken());
+        TextView tvTest = new TextView(this);
+        tvTest.setTextSize(12);
+        tvTest.setTextColor(getColorCompat(R.color.text_secondary));
+        tvTest.setPadding(0, (int) (10 * dp), 0, 0);
+        com.google.android.material.button.MaterialButton btnTest =
+                new com.google.android.material.button.MaterialButton(this, null,
+                        com.google.android.material.R.attr.materialButtonOutlinedStyle);
+        btnTest.setText("测试连接");
+        btnTest.setTextSize(13);
+        LinearLayout.LayoutParams testLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        testLp.topMargin = (int) (10 * dp);
+        pcBox.addView(btnTest, testLp);
+        pcBox.addView(tvTest);
+        box.addView(pcBox);
+
+        // ── 云端模式 ──
+        LinearLayout cloudBox = new LinearLayout(this);
+        cloudBox.setOrientation(LinearLayout.VERTICAL);
+        EditText eBase = field(cloudBox, "接口地址", prefs.base());
+        EditText eKey = field(cloudBox, "API Key", prefs.key());
+        EditText eModel = field(cloudBox, "模型名", prefs.model());
+        box.addView(cloudBox);
+
+        android.widget.CheckBox cbPage = new android.widget.CheckBox(this);
+        cbPage.setText("整页模式（数学/公式卷：整页转录为 LaTeX，不自动解题）");
+        cbPage.setChecked(prefs.pageMode());
+        cbPage.setTextSize(12);
+        box.addView(cbPage);
+
+        pcBox.setVisibility(prefs.bridgeMode() ? View.VISIBLE : View.GONE);
+        cloudBox.setVisibility(prefs.bridgeMode() ? View.GONE : View.VISIBLE);
+        modes.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
+            if (!isChecked) return;
+            boolean pc = checkedId == bPc.getId();
+            pcBox.setVisibility(pc ? View.VISIBLE : View.GONE);
+            cloudBox.setVisibility(pc ? View.GONE : View.VISIBLE);
+        });
+
+        btnTest.setOnClickListener(v -> testBridge(eBridge.getText().toString(), eToken.getText().toString(), tvTest));
 
         new MaterialAlertDialogBuilder(this)
                 .setTitle("接口设置")
-                .setMessage("默认 DeepSeek（deepseek-chat，支持读图）。也可以填其它 OpenAI 兼容服务。")
                 .setView(box)
                 .setPositiveButton("保存", (d, w) -> {
-                    prefs.save(eBase.getText().toString(), eKey.getText().toString(),
-                            eModel.getText().toString());
-                    prefs.setPageMode(cb.isChecked());
-                    status("已保存：" + prefs.model());
+                    boolean pc = modes.getCheckedButtonId() == bPc.getId();
+                    prefs.save(eBase.getText().toString(), eKey.getText().toString(), eModel.getText().toString());
+                    prefs.saveBridge(pc, eBridge.getText().toString(), eToken.getText().toString());
+                    prefs.setPageMode(cbPage.isChecked());
+                    showEndpoint();
+                    phase(pc ? "等待选择视频" : "云端模式");
+                    status(pc ? "已保存：电脑 Harness 模式" : "已保存：云端 " + prefs.model());
                 })
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    /** 在设置里当场验证电脑桥接：先探活，再用令牌验一次鉴权，把可能的坑说清楚。 */
+    private void testBridge(String rawUrl, String rawToken, TextView out) {
+        String url = rawUrl == null ? "" : rawUrl.trim().replaceAll("/+$", "");
+        String token = rawToken == null ? "" : rawToken.trim();
+        if (url.isEmpty()) {
+            out.setText("先填电脑地址，桥接启动时终端会打印。");
+            return;
+        }
+        out.setTextColor(getColorCompat(R.color.text_secondary));
+        out.setText("正在连接 " + url + " …");
+        new Thread(() -> {
+            String message;
+            int color;
+            try {
+                HttpURLConnection c = (HttpURLConnection) new URL(url + "/api/health").openConnection();
+                c.setConnectTimeout(6000);
+                c.setReadTimeout(6000);
+                int code = c.getResponseCode();
+                if (code == 200) {
+                    if (token.isEmpty()) {
+                        message = "电脑在线。还没填配对令牌。";
+                        color = R.color.warning;
+                    } else {
+                        HttpURLConnection a = (HttpURLConnection) new URL(url + "/api/jobs").openConnection();
+                        a.setConnectTimeout(6000);
+                        a.setReadTimeout(6000);
+                        a.setRequestProperty("Authorization", "Bearer " + token);
+                        int ac = a.getResponseCode();
+                        if (ac == 200) {
+                            message = "连接成功，令牌有效，可以上传。";
+                            color = R.color.success;
+                        } else if (ac == 401) {
+                            message = "电脑在线，但令牌不对。从电脑的 bridge/data/token.txt 重新复制。";
+                            color = R.color.danger;
+                        } else {
+                            message = "电脑在线，但校验返回 " + ac + "。";
+                            color = R.color.warning;
+                        }
+                    }
+                } else {
+                    message = "电脑返回 " + code + "，不是预期的桥接服务。";
+                    color = R.color.warning;
+                }
+            } catch (Throwable e) {
+                String raw = e.getMessage() == null ? e.toString() : e.getMessage();
+                String hint;
+                if (raw.contains("UnknownHost") || raw.contains("Unable to resolve host")) {
+                    hint = "地址可能写错了，或手机解析不了这个主机名。";
+                } else if (raw.contains("failed to connect") || raw.contains("ConnectException")) {
+                    hint = "连不上这台电脑。依次确认：① 电脑上桥接终端还开着；② Windows 防火墙放行了 8765；③ 手机和电脑在同一 Wi-Fi，且这个 Wi-Fi 没开设备隔离（校园网常见），必要时用手机热点或 Tailscale。";
+                } else if (raw.contains("timed out") || raw.contains("timeout")) {
+                    hint = "连接超时，多半被防火墙或网络隔离挡住，不是令牌问题。";
+                } else {
+                    hint = "看看地址是否带 http://、端口是否是 8765。";
+                }
+                message = "连不上：" + raw + "\n\n" + hint;
+                color = R.color.danger;
+            }
+            final String m = message;
+            final int col = color;
+            ui.post(() -> {
+                out.setText(redact(m));
+                out.setTextColor(getColorCompat(col));
+            });
+        }, "bridge-test").start();
     }
 
     private EditText field(LinearLayout parent, String hint, String value) {

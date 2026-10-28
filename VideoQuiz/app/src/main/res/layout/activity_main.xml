@@ -6,146 +6,218 @@
     android:background="@color/surface_dim"
     android:orientation="vertical">
 
+    <!-- 顶栏 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@color/surface"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="16dp"
-        android:paddingTop="10dp"
-        android:paddingEnd="8dp"
-        android:paddingBottom="10dp">
+        android:paddingStart="20dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="12dp">
 
-        <TextView
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="视频成卷"
-            android:textColor="@color/text_primary"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="视频成卷"
+                android:textColor="@color/text_primary"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvEndpoint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="middle"
+                android:maxLines="1"
+                android:text="未配置电脑地址"
+                android:textColor="@color/text_tertiary"
+                android:textSize="11sp" />
+        </LinearLayout>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSettings"
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"
-            android:layout_height="38dp"
+            android:layout_height="40dp"
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:minWidth="0dp"
-            android:text="接口设置"
+            android:text="设置"
             android:textSize="13sp" />
+    </LinearLayout>
+
+    <!-- 状态卡：视频 / 进度 / 状态文字 -->
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="14dp"
+        android:layout_marginTop="12dp"
+        android:layout_marginEnd="14dp"
+        app:cardBackgroundColor="@color/surface"
+        app:cardCornerRadius="18dp"
+        app:cardElevation="0dp"
+        app:strokeColor="@color/divider"
+        app:strokeWidth="1dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:id="@+id/tvPhase"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="还没有选择视频"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvVideo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:ellipsize="middle"
+                android:maxLines="1"
+                android:text="选一段试卷录像，整段视频会一次性上传到电脑"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+
+            <ProgressBar
+                android:id="@+id/progress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="8dp"
+                android:layout_marginTop="14dp"
+                android:max="100"
+                android:progressTint="@color/brand"
+                android:progressBackgroundTint="@color/brand_soft"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tvStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text=""
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- 主操作 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="14dp"
+        android:layout_marginTop="14dp"
+        android:layout_marginEnd="14dp"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnPick"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="选择视频"
+            android:textSize="14sp"
+            app:cornerRadius="16dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnRun"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_marginStart="10dp"
+            android:layout_weight="1"
+            android:enabled="false"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="上传到电脑"
+            android:textSize="14sp"
+            app:cornerRadius="16dp" />
     </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="12dp">
+        android:layout_marginStart="14dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="14dp"
+        android:orientation="horizontal">
 
-        <TextView
-            android:id="@+id/tvVideo"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:maxLines="1"
-            android:ellipsize="middle"
-            android:text="还没有选择视频"
-            android:textColor="@color/text_secondary"
-            android:textSize="12sp" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSolve"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="42dp"
+            android:layout_weight="1"
+            android:enabled="false"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="解题"
+            android:textSize="13sp"
+            app:cornerRadius="14dp" />
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:orientation="horizontal">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnPick"
-                android:layout_width="0dp"
-                android:layout_height="44dp"
-                android:layout_weight="1"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:text="选择视频"
-                android:textSize="13sp"
-                app:cornerRadius="13dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnRun"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="0dp"
-                android:layout_height="44dp"
-                android:layout_marginStart="6dp"
-                android:layout_weight="1"
-                android:enabled="false"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:text="开始识别"
-                android:textSize="13sp"
-                app:cornerRadius="13dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnSolve"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="0dp"
-                android:layout_height="44dp"
-                android:layout_marginStart="6dp"
-                android:layout_weight="1"
-                android:enabled="false"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:text="解题"
-                android:textSize="13sp"
-                app:cornerRadius="13dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnPdf"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="0dp"
-                android:layout_height="44dp"
-                android:layout_marginStart="6dp"
-                android:layout_weight="1"
-                android:enabled="false"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:text="PDF"
-                android:textSize="13sp"
-                app:cornerRadius="13dp" />
-        </LinearLayout>
-
-        <ProgressBar
-            android:id="@+id/progress"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:max="100"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/tvStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text=""
-            android:textColor="@color/text_secondary"
-            android:textSize="12sp" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnPdf"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="42dp"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:enabled="false"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="打开结果 PDF"
+            android:textSize="13sp"
+            app:cornerRadius="14dp" />
     </LinearLayout>
 
-    <ScrollView
+    <!-- 结果区 -->
+    <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="0dp"
+        android:layout_marginStart="14dp"
+        android:layout_marginTop="6dp"
+        android:layout_marginEnd="14dp"
+        android:layout_marginBottom="14dp"
         android:layout_weight="1"
-        android:background="@color/surface">
+        app:cardBackgroundColor="@color/surface"
+        app:cardCornerRadius="18dp"
+        app:cardElevation="0dp"
+        app:strokeColor="@color/divider"
+        app:strokeWidth="1dp">
 
-        <TextView
-            android:id="@+id/tvResult"
+        <ScrollView
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:padding="16dp"
-            android:text="识别结果会显示在这里"
-            android:textColor="@color/text_primary"
-            android:textSize="13sp" />
-    </ScrollView>
+            android:layout_height="match_parent"
+            android:fillViewport="true">
+
+            <TextView
+                android:id="@+id/tvResult"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:lineSpacingExtra="4dp"
+                android:padding="16dp"
+                android:text="电脑处理完成后，结果会显示在这里。"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp"
+                android:textIsSelectable="true" />
+        </ScrollView>
+    </com.google.android.material.card.MaterialCardView>
 </LinearLayout>

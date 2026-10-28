@@ -31,6 +31,32 @@ public class Prefs {
         sp.edit().putBoolean("pageMode", on).apply();
     }
 
+    public boolean bridgeMode() {
+        return sp.getBoolean("bridgeMode", false);
+    }
+
+    public String bridgeUrl() {
+        return sp.getString("bridgeUrl", "http://192.168.1.2:8765");
+    }
+
+    public String bridgeToken() {
+        return sp.getString("bridgeToken", "");
+    }
+
+    public void saveBridge(boolean enabled, String url, String token) {
+        sp.edit().putBoolean("bridgeMode", enabled)
+                .putString("bridgeUrl", url.trim().replaceAll("/+$", ""))
+                .putString("bridgeToken", token.trim()).apply();
+    }
+
+    public String bridgeJobId() {
+        return sp.getString("bridgeJobId", "");
+    }
+
+    public void setBridgeJobId(String id) {
+        sp.edit().putString("bridgeJobId", id).apply();
+    }
+
     public void save(String base, String key, String model) {
         sp.edit().putString("base", base.trim()).putString("key", key.trim())
                 .putString("model", model.trim()).apply();

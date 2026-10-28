@@ -12,3 +12,15 @@ local.properties
 /w*.xml
 /x*.xml
 /prefs*.xml
+# 本机运行产物（不要进库）
+.adb-tmp/
+.avd/
+.emu-home/
+.work/
+screen/
+dist/
+*.log
+
+# 桥接配对令牌与上传数据（敏感）
+bridge/data/
+bridge/node_modules/
