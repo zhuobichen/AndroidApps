@@ -66,13 +66,13 @@ public class Prefs {
         return sp.getString("bridgeSessionTitle", "");
     }
 
-    /** 上传完是否立刻派发任务；关掉后由用户点「开始处理」。 */
+    /** 上传完是否立刻派发任务。默认 false：必须由用户点「开始处理」确认。 */
     public boolean bridgeAutoDispatch() {
-        return sp.getBoolean("bridgeAutoDispatch", true);
+        return sp.getBoolean("bridgeAutoConfirm", false);
     }
 
     public void setBridgeAutoDispatch(boolean on) {
-        sp.edit().putBoolean("bridgeAutoDispatch", on).apply();
+        sp.edit().putBoolean("bridgeAutoConfirm", on).apply();
     }
     /** 每次上传都新建一个会话（视频试卷这类重任务用）。 */
     public boolean bridgeNewSession() {

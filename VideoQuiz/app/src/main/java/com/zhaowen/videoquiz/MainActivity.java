@@ -64,6 +64,7 @@ public class MainActivity extends AppCompatActivity {
 
     private TextView tvVideo, tvStatus, tvResult, tvPhase, tvEndpoint;
     private ProgressBar progress;
+    private boolean dispatchPrompted;
     private String chatJob;
     private String lastChatSignature;
     private String chatPollingJob;
@@ -230,6 +231,7 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         bridgeCancelled = false;
+        dispatchPrompted = false;
         resetHistorySelection();
         setBusy(true);
         progress.setIndeterminate(false);
@@ -326,8 +328,18 @@ public class MainActivity extends AppCompatActivity {
             }
             final boolean waitingDispatch = "uploaded".equals(phase);
             ui.post(() -> {
-                View dispatchBtn = findViewById(R.id.btnDispatch);
-                dispatchBtn.setVisibility(waitingDispatch && !prefs.bridgeAutoDispatch() ? View.VISIBLE : View.GONE);
+                com.google.android.material.button.MaterialButton dispatchBtn = findViewById(R.id.btnDispatch);
+                if (waitingDispatch && !prefs.bridgeAutoDispatch()) {
+                    dispatchBtn.setText("开始处理（已上传，等你确认）");
+                    dispatchBtn.setVisibility(View.VISIBLE);
+                    if (!dispatchPrompted) {
+                        dispatchPrompted = true;
+                        phase("已上传 · 等待确认");
+                        status("视频已在电脑上，点「开始处理」才发给会话");
+                    }
+                } else {
+                    dispatchBtn.setVisibility(View.GONE);
+                }
             });
             if (!"complete".equals(phase)) continue;
             JSONObject result = bridgeRequest("GET", "/api/jobs/" + id + "/result", null, null, 0);
