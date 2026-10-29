@@ -22,6 +22,10 @@
         </activity>
 
         <activity
+            android:name=".HelpActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".TaskActivity"
             android:exported="false" />
 

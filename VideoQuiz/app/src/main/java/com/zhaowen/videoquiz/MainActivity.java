@@ -1487,8 +1487,8 @@ public class MainActivity extends AppCompatActivity {
         // ── 电脑模式 ──
         LinearLayout pcBox = new LinearLayout(this);
         pcBox.setOrientation(LinearLayout.VERTICAL);
-        EditText eBridge = field(pcBox, "电脑地址，如 http://10.0.0.5:8765", prefs.bridgeUrl());
-        EditText eToken = field(pcBox, "配对令牌（电脑端 bridge/data/token.txt）", prefs.bridgeToken());
+        EditText eBridge = field(pcBox, "电脑地址", "如 http://10.0.0.5:8765 或 http://[IPv6]:8765", prefs.bridgeUrl());
+        EditText eToken = field(pcBox, "配对令牌", "电脑端 bridge/data/token.txt 里的那串字符", prefs.bridgeToken());
         TextView tvTarget = new TextView(this);
         tvTarget.setTextSize(12);
         tvTarget.setTextColor(getColorCompat(R.color.text_secondary));
@@ -1526,6 +1526,17 @@ public class MainActivity extends AppCompatActivity {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         cbLp.topMargin = (int) (8 * dp);
         pcBox.addView(cbAuto, cbLp);
+        com.google.android.material.button.MaterialButton btnHelp =
+                new com.google.android.material.button.MaterialButton(this, null,
+                        com.google.android.material.R.attr.materialButtonOutlinedStyle);
+        btnHelp.setText("使用说明");
+        btnHelp.setTextSize(13);
+        btnHelp.setAllCaps(false);
+        btnHelp.setOnClickListener(v -> startActivity(new Intent(this, HelpActivity.class)));
+        LinearLayout.LayoutParams helpLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        helpLp.topMargin = (int) (10 * dp);
+        pcBox.addView(btnHelp, helpLp);
         pcBox.addView(btnTest, testLp);
         pcBox.addView(tvTest);
         box.addView(pcBox);
@@ -1533,9 +1544,9 @@ public class MainActivity extends AppCompatActivity {
         // ── 云端模式 ──
         LinearLayout cloudBox = new LinearLayout(this);
         cloudBox.setOrientation(LinearLayout.VERTICAL);
-        EditText eBase = field(cloudBox, "接口地址", prefs.base());
-        EditText eKey = field(cloudBox, "API Key", prefs.key());
-        EditText eModel = field(cloudBox, "模型名", prefs.model());
+        EditText eBase = field(cloudBox, "接口地址", "如 https://api.deepseek.com", prefs.base());
+        EditText eKey = field(cloudBox, "API Key", "服务商控制台里的密钥", prefs.key());
+        EditText eModel = field(cloudBox, "模型名", "如 deepseek-chat", prefs.model());
         box.addView(cloudBox);
 
         android.widget.CheckBox cbPage = new android.widget.CheckBox(this);
@@ -1947,6 +1958,24 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private EditText field(LinearLayout parent, String hint, String value) {
+        return field(parent, null, hint, value);
+    }
+
+    /** 带标题的输入框：标题在上、占位提示在框里，避免用户不知道这一行填什么。 */
+    private EditText field(LinearLayout parent, String label, String hint, String value) {
+        float dp = getResources().getDisplayMetrics().density;
+
+        if (label != null && !label.isEmpty()) {
+            TextView caption = new TextView(this);
+            caption.setText(label);
+            caption.setTextSize(12);
+            caption.setTextColor(getColorCompat(R.color.text_secondary));
+            LinearLayout.LayoutParams capLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            capLp.topMargin = (int) (14 * dp);
+            parent.addView(caption, capLp);
+        }
+
         EditText e = new EditText(this);
         e.setHint(hint);
         e.setText(value);
@@ -1954,7 +1983,7 @@ public class MainActivity extends AppCompatActivity {
         e.setTextSize(13);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = (int) (8 * getResources().getDisplayMetrics().density);
+        lp.topMargin = (int) ((label == null || label.isEmpty() ? 8 : 4) * dp);
         parent.addView(e, lp);
         return e;
     }
