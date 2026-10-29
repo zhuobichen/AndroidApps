@@ -201,7 +201,8 @@ public class TaskActivity extends AppCompatActivity {
                         request("POST", "/api/jobs/" + id + "/resume", "{}");
                     } catch (Throwable ignored) {
                     }
-                    request("POST", "/api/jobs/" + id + "/forward", "{}");
+                    // force=1：上次已投递过但没产出，桥接否则会幂等跳过
+                    request("POST", "/api/jobs/" + id + "/forward?force=1", "{}");
                 } else {
                     request("POST", "/api/jobs/" + id + "/" + action, "{}");
                 }

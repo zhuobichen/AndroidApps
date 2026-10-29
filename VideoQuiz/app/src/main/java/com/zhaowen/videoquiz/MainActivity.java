@@ -1750,7 +1750,7 @@ public class MainActivity extends AppCompatActivity {
         status("正在派发…");
         new Thread(() -> {
             try {
-                String path = "/api/jobs/" + jobId + "/forward";
+                String path = "/api/jobs/" + jobId + "/forward?force=1";
                 JSONObject result = bridgeRequest("POST", path, "{}", "application/json", 20000);
                 boolean ok = result.optBoolean("ok", false);
                 ui.post(() -> {

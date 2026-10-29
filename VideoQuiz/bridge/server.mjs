@@ -245,10 +245,21 @@ function newestMtime(dir) {
   return newest || Date.now();
 }
 
-async function sendToSession(id, job) {
+async function sendToSession(id, job, options = {}) {
   const dir = jobPath(id);
   if (!dir || !existsSync(join(dir, 'job.json'))) throw new Error('job not found');
-  if (existsSync(join(dir, 'forwarding.json')) || existsSync(join(dir, 'forwarded.json'))) return;
+
+  if (options.force === true) {
+    // 重新派发：把上一次的投递记录归档，然后当作没派发过处理
+    for (const name of ['forwarding.json', 'forwarded.json', 'forward-error.json']) {
+      const from = join(dir, name);
+      if (existsSync(from)) {
+        try { renameSync(from, join(dir, `${name}.previous-${Date.now()}`)); } catch { try { unlinkSync(from); } catch {} }
+      }
+    }
+  } else if (existsSync(join(dir, 'forwarding.json')) || existsSync(join(dir, 'forwarded.json'))) {
+    return;
+  }
 
   const scope = workspaceSessionIds();
   let session = typeof job.targetSessionId === 'string' && job.targetSessionId !== '' ? job.targetSessionId : targetSessionId;
@@ -486,8 +497,10 @@ const server = createServer(async (req, res) => {
       if (!job) return json(res, 404, { error: 'job not found' });
       if (existsSync(join(dir, 'done.json'))) return json(res, 409, { error: 'job already completed' });
       try {
-        await sendToSession(id, job);
-        return json(res, 200, { ok: true, id, status: 'forwarded' });
+        // 已派发过但没产出结果的任务（中断），允许强制重投
+        const force = ['1','true'].includes(String(url.searchParams.get('force') || '').toLowerCase());
+        await sendToSession(id, job, { force });
+        return json(res, 200, { ok: true, id, status: 'forwarded', forced: force });
       } catch (error) {
         return json(res, 502, { ok: false, id, status: 'notification_failed', error: error.message });
       }
