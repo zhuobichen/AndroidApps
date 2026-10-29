@@ -333,11 +333,29 @@ public class MainActivity extends AppCompatActivity {
             String text = result.optString("text", "");
             JSONArray files = result.optJSONArray("files");
             bridgeFiles.clear();
+            int totalFiles = files == null ? 0 : files.length();
             if (files != null) {
-                for (int i = 0; i < files.length(); i++) {
+                for (int i = 0; i < totalFiles; i++) {
                     JSONObject f = files.getJSONObject(i);
-                    File out = new File(getExternalFilesDir(null), id + "_" + f.getString("name"));
-                    bridgeDownload(id, f.getString("name"), out);
+                    String name = f.getString("name");
+                    long expected = f.optLong("size", 0);
+                    File out = new File(getExternalFilesDir(null), id + "_" + name);
+                    if (alreadyDownloaded(out, expected)) {
+                        status("已有本地副本：" + name + "（" + (i + 1) + "/" + totalFiles + "）");
+                    } else {
+                        final int seq = i + 1;
+                        final int all = totalFiles;
+                        final String fileName = name;
+                        bridgeDownload(id, name, out, (done, size) -> {
+                            if (size > 0) {
+                                int pct = (int) (done * 100 / size);
+                                status("下载 " + seq + "/" + all + " · " + fileName + " " + pct + "%（"
+                                        + formatBytes(done) + " / " + formatBytes(size) + "）");
+                            } else {
+                                status("下载 " + seq + "/" + all + " · " + fileName + " " + formatBytes(done));
+                            }
+                        });
+                    }
                     bridgeFiles.add(out);
                     if (f.optString("mimeType").equals("application/pdf") && lastPdf == null) lastPdf = out;
                 }
@@ -485,7 +503,15 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private interface DownloadProgress {
+        void onProgress(long done, long total);
+    }
+
     private void bridgeDownload(String id, String name, File target) throws Exception {
+        bridgeDownload(id, name, target, null);
+    }
+
+    private void bridgeDownload(String id, String name, File target, DownloadProgress progress) throws Exception {
         String encoded = URLEncoder.encode(name, "UTF-8").replace("+", "%20");
         HttpURLConnection c = (HttpURLConnection) new URL(prefs.bridgeUrl() + "/api/jobs/" + id + "/files/" + encoded).openConnection();
         c.setConnectTimeout(15000);
@@ -493,13 +519,27 @@ public class MainActivity extends AppCompatActivity {
         c.setRequestProperty("Authorization", "Bearer " + bridgeTokenValue());
         int code = c.getResponseCode();
         if (code != 200) throw new IllegalStateException("下载回传文件失败：HTTP " + code);
+        long total = c.getContentLengthLong();
         File parent = target.getParentFile();
         if (parent != null) parent.mkdirs();
-        try (InputStream in = c.getInputStream(); OutputStream out = new java.io.FileOutputStream(target)) {
+        File tmp = new File(target.getPath() + ".part");
+        long done = 0;
+        try (InputStream in = c.getInputStream(); OutputStream out = new java.io.FileOutputStream(tmp)) {
             byte[] buffer = new byte[128 * 1024];
             int n;
-            while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+            while ((n = in.read(buffer)) != -1) {
+                out.write(buffer, 0, n);
+                done += n;
+                if (progress != null) progress.onProgress(done, total);
+            }
         } finally { c.disconnect(); }
+        if (target.exists() && !target.delete()) throw new IllegalStateException("无法覆盖旧文件");
+        if (!tmp.renameTo(target)) throw new IllegalStateException("无法写入 " + target.getName());
+    }
+
+    /** 本地已有且大小一致，就不重复下载。 */
+    private boolean alreadyDownloaded(File target, long expectedSize) {
+        return target != null && target.isFile() && (expectedSize <= 0 || target.length() == expectedSize);
     }
 
     private String getDisplayName(Uri uri) {
@@ -1676,23 +1716,45 @@ public class MainActivity extends AppCompatActivity {
                 String text = result.optString("text", "");
                 JSONArray files = result.optJSONArray("files");
                 bridgeFiles.clear();
+                int reused = 0;
+                int total = files == null ? 0 : files.length();
                 if (files != null) {
-                    for (int i = 0; i < files.length(); i++) {
+                    for (int i = 0; i < total; i++) {
                         JSONObject f = files.getJSONObject(i);
-                        File out = new File(getExternalFilesDir(null), id + "_" + f.getString("name"));
-                        bridgeDownload(id, f.getString("name"), out);
+                        String name = f.getString("name");
+                        long expected = f.optLong("size", 0);
+                        File out = new File(getExternalFilesDir(null), id + "_" + name);
+                        if (alreadyDownloaded(out, expected)) {
+                            reused++;
+                            status("已有本地副本：" + name + "（" + (i + 1) + "/" + total + "）");
+                        } else {
+                            final int seq = i + 1;
+                            final int all = total;
+                            final String fileName = name;
+                            bridgeDownload(id, name, out, (done, size) -> {
+                                if (size > 0) {
+                                    int pct = (int) (done * 100 / size);
+                                    status("下载 " + seq + "/" + all + " · " + fileName + " " + pct + "%（"
+                                            + formatBytes(done) + " / " + formatBytes(size) + "）");
+                                } else {
+                                    status("下载 " + seq + "/" + all + " · " + fileName + " " + formatBytes(done));
+                                }
+                            });
+                        }
                         bridgeFiles.add(out);
                         if (f.optString("mimeType").equals("application/pdf") && lastPdf == null) lastPdf = out;
                     }
                 }
-                final String delivered = text.isEmpty() ? "结果已下载。" : text;
+                final int reuseCount = reused;
+                final String delivered = text.isEmpty() ? (reuseCount > 0 ? "结果已在本机，未重复下载。" : "结果已下载。") : text;
                 ui.post(() -> {
                     tvResult.setText(delivered);
                     View pdfBtn = findViewById(R.id.btnPdf);
                     pdfBtn.setVisibility(bridgeFiles.isEmpty() ? View.GONE : View.VISIBLE);
                     pdfBtn.setEnabled(!bridgeFiles.isEmpty());
                     phase("已恢复历史结果");
-                    status("结果已下载，可打开 PDF 或继续追问");
+                    status(reuseCount > 0 ? "结果已在本机（复用 " + reuseCount + " 个文件），可打开 PDF 或继续追问"
+                            : "结果已下载，可打开 PDF 或继续追问");
                 });
                 showChatFor(id);
                 status("已下载 " + bridgeFiles.size() + " 个文件");
