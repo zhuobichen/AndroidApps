@@ -102,7 +102,7 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btnSettings).setOnClickListener(v -> showSettings());
         findViewById(R.id.btnDispatch).setOnClickListener(v -> dispatchPending());
         findViewById(R.id.btnHistory).setOnClickListener(v -> showHistory());
-        findViewById(R.id.chatSend).setOnClickListener(v -> sendChat());
+        findViewById(R.id.btnOpenChat).setOnClickListener(v -> openChatActivity());
 
         String dbg = getIntent().getStringExtra("video");
         if (dbg != null) {
@@ -1527,124 +1527,33 @@ public class MainActivity extends AppCompatActivity {
         chatPollingJob = null;
         lastChatSignature = null;
         ui.post(() -> {
-            View card = findViewById(R.id.chatCard);
-            if (card != null) card.setVisibility(View.GONE);
-            LinearLayout list = findViewById(R.id.chatList);
-            if (list != null) list.removeAllViews();
-            EditText input = findViewById(R.id.chatInput);
-            if (input != null) input.setText("");
+            View button = findViewById(R.id.btnOpenChat);
+            if (button != null) button.setVisibility(View.GONE);
             View pdfBtn = findViewById(R.id.btnPdf);
             if (pdfBtn != null) pdfBtn.setVisibility(View.GONE);
             bridgeFiles.clear();
             lastPdf = null;
         });
     }
-    /** 结果出来后在下方显示追问面板，并开始轮询会话消息。 */
-    private void showChatFor(String jobId) {
-        chatJob = jobId;
-        View card = findViewById(R.id.chatCard);
-        card.setVisibility(View.VISIBLE);
-        startChatPolling(jobId);
-    }
-
-    private void startChatPolling(String jobId) {
-        if (chatPollingJob != null && chatPollingJob.equals(jobId)) return;
-        chatPollingJob = jobId;
-        new Thread(() -> {
-            while (!isFinishing() && jobId.equals(chatPollingJob)) {
-                try {
-                    JSONObject payload = bridgeRequest("GET", "/api/jobs/" + jobId + "/chat?limit=40", null, null, 15000);
-                    JSONArray messages = payload.optJSONArray("messages");
-                    final String title = payload.optString("title", "");
-                    final String sid = payload.optString("sessionId", "");
-                    ui.post(() -> {
-                        TextView target = findViewById(R.id.tvChatTarget);
-                        if (target == null) return;
-                        String who = title.isEmpty() ? sid : title;
-                        target.setText("继续追问 · 会话：" + who + "（只追加消息，不重新生成 PDF）");
-                    });
-                    renderChat(messages);
-                } catch (Throwable ignored) {
-                    // 网络抖动就下一轮再试
-                }
-                try {
-                    Thread.sleep(3000);
-                } catch (InterruptedException stop) {
-                    return;
-                }
-            }
-        }, "chat-poll").start();
-    }
-
-    private void renderChat(JSONArray messages) {
-        if (messages == null) return;
-        // 内容没变就不重建视图：每 3 秒重排 30 个气泡会让输入框打字发卡
-        StringBuilder signature = new StringBuilder();
-        for (int i = 0; i < messages.length(); i++) {
-            JSONObject m = messages.optJSONObject(i);
-            if (m == null) continue;
-            signature.append(m.optString("id", "")).append('|').append(m.optString("text", "").length()).append(';');
-        }
-        String sig = signature.toString();
-        if (sig.equals(lastChatSignature)) return;
-        lastChatSignature = sig;
-        ui.post(() -> {
-            LinearLayout list = findViewById(R.id.chatList);
-            if (list == null) return;
-            list.removeAllViews();
-            int start = Math.max(0, messages.length() - 30);
-            for (int i = start; i < messages.length(); i++) {
-                JSONObject m = messages.optJSONObject(i);
-                if (m == null) continue;
-                String role = m.optString("role", "?");
-                String text = m.optString("text", "");
-                if (text.trim().isEmpty()) continue;
-
-                TextView bubble = new TextView(this);
-                bubble.setText(text);
-                bubble.setTextSize(13);
-                bubble.setPadding(dp(12), dp(8), dp(12), dp(8));
-                boolean mine = "user".equals(role);
-                bubble.setBackgroundColor(mine ? 0xFFE8EFFF : 0xFFF2F4F8);
-                bubble.setTextColor(0xFF14181F);
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-                lp.topMargin = dp(4);
-                lp.leftMargin = mine ? dp(28) : 0;
-                lp.rightMargin = mine ? 0 : dp(28);
-                bubble.setLayoutParams(lp);
-                list.addView(bubble);
-            }
-        });
-    }
-
-    private void sendChat() {
-        String jobId = chatJob;
-        EditText input = findViewById(R.id.chatInput);
-        String text = input == null ? "" : input.getText().toString().trim();
+    /** 打开独立追问页：输入行固定在底部，不会被键盘遮住。 */
+    private void openChatActivity() {
+        String jobId = chatJob != null && !chatJob.isEmpty() ? chatJob : prefs.bridgeJobId();
         if (jobId == null || jobId.isEmpty()) {
             status("还没有可追问的任务");
             return;
         }
-        if (text.isEmpty()) return;
-        input.setText("");
-        status("已发送，等待回复…");
-        new Thread(() -> {
-            try {
-                JSONObject body = new JSONObject();
-                body.put("text", text);
-                JSONObject result = bridgeRequest("POST", "/api/jobs/" + jobId + "/chat", body.toString(), "application/json", 20000);
-                boolean ok = result.optBoolean("ok", false);
-                ui.post(() -> status(ok ? "已投递，等待 AI 回复" : "发送失败：" + result.optString("message", result.optString("code", "未知"))));
-            } catch (Throwable e) {
-                final String message = "发送失败：" + (e.getMessage() == null ? e.toString() : e.getMessage());
-                ui.post(() -> status(message));
-            }
-        }, "chat-send").start();
+        Intent intent = new Intent(this, ChatActivity.class);
+        intent.putExtra(ChatActivity.EXTRA_JOB_ID, jobId);
+        String who = prefs.bridgeSessionTitle();
+        intent.putExtra(ChatActivity.EXTRA_TITLE, who == null ? "" : who);
+        startActivity(intent);
     }
 
-    private int dp(int value) {
-        return (int) (value * getResources().getDisplayMetrics().density);
+    /** 有结果时显示「继续追问」入口。 */
+    private void showChatFor(String jobId) {
+        chatJob = jobId;
+        View button = findViewById(R.id.btnOpenChat);
+        if (button != null) button.setVisibility(View.VISIBLE);
     }
     /** 历史任务：从电脑拉最近的任务，可重新下载结果。 */
     private void showHistory() {
@@ -1706,10 +1615,12 @@ public class MainActivity extends AppCompatActivity {
             phase("历史结果");
             tvVideo.setText("任务 " + jobId.substring(0, 8) + " · 会话：" + who);
             status("正在下载结果文件…");
-            View card = findViewById(R.id.chatCard);
-            if (card != null) card.setVisibility(View.VISIBLE);
-            TextView label = findViewById(R.id.tvChatTarget);
-            if (label != null) label.setText("继续追问 · 会话：" + who + "（只追加消息，不重新生成 PDF）");
+            com.google.android.material.button.MaterialButton button = findViewById(R.id.btnOpenChat);
+            if (button != null) {
+                button.setVisibility(View.VISIBLE);
+                button.setText("继续追问 · 会话：" + who);
+            }
+            prefs.saveBridgeSession(prefs.bridgeSessionId(), who);
             tvResult.setText("正在从电脑取回这次任务的结果…");
             View pdfBtn = findViewById(R.id.btnPdf);
             if (pdfBtn != null) {
@@ -1717,7 +1628,7 @@ public class MainActivity extends AppCompatActivity {
                 pdfBtn.setEnabled(false);
             }
         });
-        startChatPolling(jobId);
+        chatJob = jobId;
     }
     /** 把某个已完成任务的结果文件重新下载到手机并展示文本。 */
     private void downloadJobResults(String id) {
