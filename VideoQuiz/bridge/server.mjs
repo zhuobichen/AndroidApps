@@ -169,7 +169,7 @@ async function latestActivity(sessionId) {
     if (Array.isArray(messages) && messages.length > 0) {
       const last = messages[messages.length - 1];
       const text = typeof last.text === 'string' ? last.text.trim() : '';
-      const line = text === '' ? undefined : `${last.role === 'tool' ? '正在' : ''}${text}`;
+      const line = text === '' ? undefined : `${last.role === 'tool' ? '正在 ' : ''}${text}`;
       activityCache.set(sessionId, { at: Date.now(), text: line });
       return line;
     }
