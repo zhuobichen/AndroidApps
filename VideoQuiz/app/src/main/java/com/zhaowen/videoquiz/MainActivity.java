@@ -1285,14 +1285,29 @@ public class MainActivity extends AppCompatActivity {
 
     private void makePdf() {
         if (prefs.bridgeMode() && !bridgeFiles.isEmpty()) {
-            File pdf = lastPdf;
-            if (pdf == null) {
-                for (File file : bridgeFiles) {
-                    if (file.getName().toLowerCase().endsWith(".pdf")) { pdf = file; break; }
-                }
+            // 收集所有 PDF：完整版 + 答案速查版
+            ArrayList<File> pdfs = new ArrayList<>();
+            for (File file : bridgeFiles) {
+                if (file.getName().toLowerCase().endsWith(".pdf") && file.isFile()) pdfs.add(file);
             }
-            if (pdf != null && pdf.isFile()) {
-                openPdf(pdf);
+
+            if (pdfs.size() == 1) {
+                openPdf(pdfs.get(0));
+                return;
+            }
+
+            if (pdfs.size() > 1) {
+                String[] labels = new String[pdfs.size()];
+                for (int i = 0; i < pdfs.size(); i++) {
+                    String name = pdfs.get(i).getName();
+                    if (name.contains("answers_only")) labels[i] = "答案速查版（只含答案）";
+                    else if (name.contains("answers")) labels[i] = "完整版（题目 + 答案）";
+                    else labels[i] = name;
+                }
+                new MaterialAlertDialogBuilder(this)
+                        .setTitle("打开哪一份")
+                        .setItems(labels, (d, which) -> openPdf(pdfs.get(which)))
+                        .show();
                 return;
             }
             ArrayList<Uri> streams = new ArrayList<>();

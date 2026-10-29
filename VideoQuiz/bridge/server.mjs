@@ -282,7 +282,7 @@ async function sendToSession(id, job, options = {}) {
       `回传服务地址：${completionUrl}`,
       `本机桥接辅助脚本：${join(here, 'task.ps1')}`,
       `任务要求：${job.task}`,
-      `请先运行本机 pwsh 的 task.ps1：Operation=claim、BaseUrl=${completionUrl}、Id=${id}、IncludeVideoPath，拿到路径后读取视频、完成题目，在结果目录写入 answers.pdf 与 answers.txt；完成后再次运行 task.ps1：Operation=complete、BaseUrl=${completionUrl}、Id=${id}、Text=结果摘要、FilesJson='[{"name":"answers.pdf","mimeType":"application/pdf"},{"name":"answers.txt","mimeType":"text/plain"}]'。脚本自行读取本机 token.txt，禁止读取/展示/写入对话。不要改写视频源文件。`,
+      `请先运行本机 pwsh 的 task.ps1：Operation=claim、BaseUrl=${completionUrl}、Id=${id}、IncludeVideoPath，拿到路径后读取视频、完成题目，在结果目录写入三个文件：① answers.pdf（完整版，题目+答案）；② answers_only.pdf（速查版，只列题号与答案，不抄题目原文，一页能扫完）；③ answers.txt（纯文本摘要）。完成后再次运行 task.ps1：Operation=complete、BaseUrl=${completionUrl}、Id=${id}、Text=结果摘要、FilesJson='[{"name":"answers.pdf","mimeType":"application/pdf"},{"name":"answers_only.pdf","mimeType":"application/pdf"},{"name":"answers.txt","mimeType":"text/plain"}]'。脚本自行读取本机 token.txt，禁止读取/展示/写入对话。不要改写视频源文件。`,
     ].join('\n');
 
     const outcome = await supervisorCommand({ op: 'send', sessionId: session, text });
