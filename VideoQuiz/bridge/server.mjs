@@ -182,6 +182,7 @@ function jobState(dir, job) {
   const forwarding = readJson(join(dir, 'forwarding.json'));
   const forwarded = readJson(join(dir, 'forwarded.json'));
   const processing = existsSync(join(dir, 'processing.json'));
+  const cancelled = existsSync(join(dir, 'cancelled.json'));
 
   // 已派发但长时间没有 done.json：可能是解析被中断（DSH 重启、会话被杀），
   // 这时不能一直显示「处理中」，要明确告诉用户它停了。
@@ -212,7 +213,10 @@ function jobState(dir, job) {
     stalled,
     idleMinutes,
     ...(reason === undefined ? {} : { stallReason: reason }),
-    status: done
+    cancelled,
+    status: cancelled && done === null
+      ? 'cancelled'
+      : done
       ? 'complete'
       : stalled
         ? 'stalled'
@@ -593,7 +597,7 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { jobs });
     }
 
-    const match = url.pathname.match(/^\/api\/jobs\/([0-9a-f-]{36})(?:\/(status|result|files\/([^/]+)))?$/i);
+    const match = url.pathname.match(/^\/api\/jobs\/([0-9a-f-]{36})(?:\/(status|result|cancel|resume|files\/([^/]+)))?$/i);
     if (!match) return json(res, 404, { error: 'not found' });
     const [, id, action = 'status', encodedName] = match;
     await refreshRunningSessions();
@@ -602,6 +606,7 @@ const server = createServer(async (req, res) => {
     const job = readJson(join(dir, 'job.json'));
     const done = readJson(join(dir, 'done.json'));
     const processing = existsSync(join(dir, 'processing.json'));
+  const cancelled = existsSync(join(dir, 'cancelled.json'));
 
     if (req.method === 'GET' && action === 'status') {
       const files = done ? listFiles(dir, done) : [];
@@ -609,11 +614,11 @@ const server = createServer(async (req, res) => {
       const forwardError = readJson(join(dir, 'forward-error.json'));
       const computed = jobState(dir, job);
       const stalled = computed.stalled === true;
-      const status = stalled
-        ? 'stalled'
-        : done ? 'complete' : processing ? 'processing' : forwarded ? 'forwarded' : forwardError ? 'notification_failed' : 'uploaded';
+      const status = stalled ? 'stalled' : computed.status;
       const message = stalled
         ? `这个任务停在电脑上（${computed.stallReason || '没有产出结果'}），可以重新派发`
+        : computed.status === 'cancelled'
+        ? '这个任务已被取消'
         : done?.message || (processing ? '电脑 Harness 正在处理' : forwarded ? `已注入目标 Harness 会话 ${forwarded.targetSessionId}` : forwardError ? `已上传，自动通知失败：${forwardError.message}` : '等待会话注入');
       return json(res, 200, {
         id,
@@ -626,6 +631,15 @@ const server = createServer(async (req, res) => {
         files,
       });
     }
+    if (req.method === 'POST' && action === 'cancel') {
+      writeFileSync(join(dir, 'cancelled.json'), JSON.stringify({ cancelledAt: new Date().toISOString() }));
+      return json(res, 200, { ok: true, id, status: 'cancelled' });
+    }
+    if (req.method === 'POST' && action === 'resume') {
+      try { unlinkSync(join(dir, 'cancelled.json')); } catch {}
+      return json(res, 200, { ok: true, id, status: 'uploaded' });
+    }
+
     if (req.method === 'GET' && action === 'result') {
       if (!done) return json(res, 409, { error: 'result not ready' });
       return json(res, 200, { id, text: done.text || '', files: listFiles(dir, done), completedAt: done.completedAt });

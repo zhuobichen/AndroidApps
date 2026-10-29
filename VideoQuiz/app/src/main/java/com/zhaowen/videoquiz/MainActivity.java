@@ -102,6 +102,8 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btnPdf).setOnClickListener(v -> makePdf());
         findViewById(R.id.btnSettings).setOnClickListener(v -> showSettings());
         findViewById(R.id.btnDispatch).setOnClickListener(v -> dispatchPending());
+        findViewById(R.id.btnTasks).setOnClickListener(v ->
+                startActivity(new Intent(this, TaskActivity.class)));
         findViewById(R.id.btnHistory).setOnClickListener(v -> showHistory());
         findViewById(R.id.btnOpenChat).setOnClickListener(v -> openChatActivity());
 
@@ -131,6 +133,14 @@ public class MainActivity extends AppCompatActivity {
             } catch (Throwable t) {
                 status("渲染测试失败：" + t);
             }
+            return;
+        }
+
+        // 从任务队列点「打开结果」进来：直接定位到那个任务
+        String openJob = getIntent() == null ? null : getIntent().getStringExtra("openJob");
+        if (openJob != null && !openJob.isEmpty()) {
+            prepareHistoryView(openJob, prefs.bridgeSessionTitle());
+            new Thread(() -> downloadJobResults(openJob), "open-job").start();
             return;
         }
 

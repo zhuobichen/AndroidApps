@@ -22,6 +22,10 @@
         </activity>
 
         <activity
+            android:name=".TaskActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ChatActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
