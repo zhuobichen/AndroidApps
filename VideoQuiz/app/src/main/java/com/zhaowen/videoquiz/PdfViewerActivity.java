@@ -31,6 +31,16 @@ public class PdfViewerActivity extends AppCompatActivity {
     public static final String EXTRA_PATH = "path";
 
     private final Handler ui = new Handler(Looper.getMainLooper());
+
+    /** 保存时弹出的系统文件选择器回调。 */
+    private final androidx.activity.result.ActivityResultLauncher<Intent> saveLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+                    result -> {
+                        if (result.getResultCode() == RESULT_OK && result.getData() != null
+                                && result.getData().getData() != null) {
+                            copyTo(result.getData().getData());
+                        }
+                    });
     private ParcelFileDescriptor descriptor;
     private PdfRenderer renderer;
     private File currentFile;
@@ -103,7 +113,8 @@ public class PdfViewerActivity extends AppCompatActivity {
         // ── 页面：单页，可上下滚动查看长页 ──
         ScrollView scroll = new ScrollView(this);
         pageView = new ImageView(this);
-        pageView.setAdjustViewBounds(true);
+        pageView.setAdjustViewBounds(false);
+        pageView.setScaleType(ImageView.ScaleType.FIT_START);
         LinearLayout holder = new LinearLayout(this);
         holder.setPadding(dp(8), dp(8), dp(8), dp(8));
         holder.addView(pageView, new LinearLayout.LayoutParams(
@@ -164,6 +175,7 @@ public class PdfViewerActivity extends AppCompatActivity {
         new Thread(() -> {
             Bitmap bitmap = null;
             String error = null;
+            boolean renderBlank = false;
             try {
                 synchronized (renderer) {
                     PdfRenderer.Page page = renderer.openPage(wanted);
@@ -177,11 +189,14 @@ public class PdfViewerActivity extends AppCompatActivity {
                         height = maxHeight;
                     }
 
-                    // RGB_565：白底文档足够，内存只有 ARGB 的一半
-                    bitmap = Bitmap.createBitmap(Math.max(1, width), Math.max(1, height), Bitmap.Config.RGB_565);
+                    // 用 ARGB_8888：RGB_565 在部分 PDF 上会渲染成空白页。
+                    // 单页 1080×1500 约 6.5MB，翻页即回收，不会 OOM。
+                    bitmap = Bitmap.createBitmap(Math.max(1, width), Math.max(1, height), Bitmap.Config.ARGB_8888);
                     bitmap.eraseColor(Color.WHITE);
                     page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
                     page.close();
+
+                    if (isAllWhite(bitmap)) renderBlank = true;
                 }
             } catch (Throwable e) {
                 error = e.getMessage() == null ? e.toString() : e.getMessage();
@@ -189,13 +204,26 @@ public class PdfViewerActivity extends AppCompatActivity {
 
             final Bitmap rendered = bitmap;
             final String failure = error;
+            final boolean blank = renderBlank;
             ui.post(() -> {
                 if (rendered != null) {
                     Bitmap old = currentBitmap;
                     currentBitmap = rendered;
                     pageIndex = wanted;
+
+                    // 明确按位图比例设置高度：只靠 adjustViewBounds 在 ScrollView 里容易算成 0
+                    int viewWidth = Math.max(1, pageView.getWidth());
+                    if (viewWidth <= dp(16)) viewWidth = getResources().getDisplayMetrics().widthPixels - dp(16);
+                    int viewHeight = Math.max(1, (int) ((long) viewWidth * rendered.getHeight() / Math.max(1, rendered.getWidth())));
+                    pageView.getLayoutParams().height = viewHeight;
                     pageView.setImageBitmap(rendered);
-                    pageLabel.setText((wanted + 1) + " / " + count);
+                    pageView.requestLayout();
+
+                    pageLabel.setText((wanted + 1) + " / " + count + (blank ? "  · 空白页" : ""));
+                    if (blank) {
+                        Toast.makeText(this, "第 " + (wanted + 1) + " 页渲染为空白（PDF 用了不支持的编码）",
+                                Toast.LENGTH_LONG).show();
+                    }
                     if (old != null && old != rendered && !old.isRecycled()) old.recycle();
                 } else {
                     pageLabel.setText("第 " + (wanted + 1) + " 页渲染失败");
@@ -228,40 +256,40 @@ public class PdfViewerActivity extends AppCompatActivity {
     }
 
     /** 保存到系统「下载」目录（Android 10+ 走 MediaStore，不需要存储权限）。 */
+    /** 系统文件选择器：让用户自己选保存位置（下载 / 文档 / 云盘都行）。 */
     private void saveToDownloads() {
         if (currentFile == null || !currentFile.isFile()) {
             Toast.makeText(this, "文件不存在", Toast.LENGTH_SHORT).show();
             return;
         }
-        if (android.os.Build.VERSION.SDK_INT < 29) {
-            Toast.makeText(this, "系统版本较低，请用「分享 → 保存到文件」", Toast.LENGTH_LONG).show();
-            return;
+        try {
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/pdf");
+            intent.putExtra(Intent.EXTRA_TITLE, currentFile.getName());
+            saveLauncher.launch(intent);
+        } catch (Throwable e) {
+            Toast.makeText(this, "打开保存面板失败：" + e.getMessage(), Toast.LENGTH_LONG).show();
         }
+    }
+
+    /** 把当前 PDF 复制到用户选定的位置。 */
+    private void copyTo(android.net.Uri target) {
+        final File source = currentFile;
+        if (source == null || !source.isFile()) return;
 
         Toast.makeText(this, "正在保存…", Toast.LENGTH_SHORT).show();
-        final File source = currentFile;
         new Thread(() -> {
             String message;
             try {
-                android.content.ContentValues values = new android.content.ContentValues();
-                values.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, source.getName());
-                values.put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/pdf");
-                values.put(android.provider.MediaStore.Downloads.RELATIVE_PATH,
-                        android.os.Environment.DIRECTORY_DOWNLOADS + "/卷灵");
-
-                android.net.Uri target = getContentResolver()
-                        .insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-                if (target == null) throw new IllegalStateException("无法在下载目录创建文件");
-
                 try (java.io.InputStream in = new java.io.FileInputStream(source);
                      java.io.OutputStream out = getContentResolver().openOutputStream(target)) {
-                    if (out == null) throw new IllegalStateException("无法写入目标文件");
+                    if (out == null) throw new IllegalStateException("无法写入目标位置");
                     byte[] buffer = new byte[64 * 1024];
                     int n;
                     while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
                 }
-
-                message = "已保存到 下载/卷灵/" + source.getName();
+                message = "已保存：" + source.getName();
             } catch (Throwable e) {
                 message = "保存失败：" + (e.getMessage() == null ? e.toString() : e.getMessage());
             }
@@ -270,6 +298,28 @@ public class PdfViewerActivity extends AppCompatActivity {
         }, "pdf-save").start();
     }
 
+    /** 采样判断整页是否纯白，用于识别「渲染成功但没内容」的情况。 */
+    private static boolean isAllWhite(Bitmap bitmap) {
+        try {
+            int width = bitmap.getWidth();
+            int height = bitmap.getHeight();
+            if (width <= 0 || height <= 0) return true;
+
+            int stepY = Math.max(1, height / 40);
+            int stepX = Math.max(1, width / 40);
+            int[] row = new int[width];
+
+            for (int y = 0; y < height; y += stepY) {
+                bitmap.getPixels(row, 0, width, 0, y, width, 1);
+                for (int x = 0; x < width; x += stepX) {
+                    if ((row[x] & 0x00FFFFFF) != 0x00FFFFFF) return false;
+                }
+            }
+            return true;
+        } catch (Throwable e) {
+            return false;
+        }
+    }
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density);
     }
