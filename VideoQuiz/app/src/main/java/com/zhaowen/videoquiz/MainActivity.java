@@ -9,6 +9,7 @@ import android.view.View;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -1566,9 +1567,11 @@ public class MainActivity extends AppCompatActivity {
 
         btnTest.setOnClickListener(v -> testBridge(eBridge.getText().toString(), eToken.getText().toString(), tvTest));
 
+        ScrollView settingsScroll = new ScrollView(this);
+        settingsScroll.addView(box);
         new MaterialAlertDialogBuilder(this)
                 .setTitle("接口设置")
-                .setView(box)
+                .setView(settingsScroll)
                 .setPositiveButton("保存", (d, w) -> {
                     boolean pc = modes.getCheckedButtonId() == bPc.getId();
                     prefs.save(eBase.getText().toString(), eKey.getText().toString(), eModel.getText().toString());
@@ -1953,6 +1956,10 @@ public class MainActivity extends AppCompatActivity {
             ui.post(() -> {
                 out.setText(redact(m));
                 out.setTextColor(getColorCompat(col));
+                // 结果那一行可能被滚出视野（设置项变多了），Toast 兜个底
+                String brief = redact(m).split("\n")[0];
+                if (brief.length() > 60) brief = brief.substring(0, 60) + "…";
+                Toast.makeText(this, brief, Toast.LENGTH_LONG).show();
             });
         }, "bridge-test").start();
     }

@@ -11,8 +11,8 @@ android {
         applicationId = "com.zhaowen.videoquiz"
         minSdk = 26
         targetSdk = 34
-        versionCode = 29
-        versionName = "2.9"
+        versionCode = 30
+        versionName = "3.0"
     }
 
     signingConfigs {
