@@ -329,13 +329,17 @@ public class MainActivity extends AppCompatActivity {
             JSONObject state = bridgeRequest("GET", "/api/jobs/" + id + "/status", null, null, 0);
             String phase = state.optString("status", "uploaded");
             String message = state.optString("message", "等待电脑处理");
-            // 会话主动上报的进度：「现在做到哪一步」
+            // 电脑侧直接读会话正在做什么（工具调用 / 助手发言）
+            String activity = state.optString("activity", "").trim();
+            if (!activity.isEmpty()) message = activity;
+
+            // 会话主动上报的进度「现在做到哪一步」
             JSONArray progressLog = state.optJSONArray("progress");
             if (progressLog != null && progressLog.length() > 0) {
                 JSONObject latest = progressLog.optJSONObject(progressLog.length() - 1);
                 if (latest != null) {
                     String now = latest.optString("text", "").trim();
-                    if (!now.isEmpty()) message = now;
+                    if (!now.isEmpty()) message = now + (activity.isEmpty() ? "" : " · " + activity);
                 }
             }
             polls++;

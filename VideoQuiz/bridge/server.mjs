@@ -154,6 +154,33 @@ const STALL_MINUTES = Number(process.env.VIDEOQUIZ_STALL_MINUTES || 45);
 /** 刚派发的前几分钟允许会话启动，不判死。 */
 const STARTUP_GRACE_MINUTES = 3;
 
+/** 会话最近活动缓存：status 每次轮询都问插件太重，4 秒内复用。 */
+const activityCache = new Map();
+
+async function latestActivity(sessionId) {
+  if (typeof sessionId !== 'string' || sessionId === '') return undefined;
+
+  const hit = activityCache.get(sessionId);
+  if (hit !== undefined && Date.now() - hit.at < 4000) return hit.text;
+
+  try {
+    const outcome = await supervisorCommand({ op: 'tail', sessionId, limit: 6, includeTools: true });
+    const messages = outcome?.body?.messages;
+    if (Array.isArray(messages) && messages.length > 0) {
+      const last = messages[messages.length - 1];
+      const text = typeof last.text === 'string' ? last.text.trim() : '';
+      const line = text === '' ? undefined : `${last.role === 'tool' ? '正在' : ''}${text}`;
+      activityCache.set(sessionId, { at: Date.now(), text: line });
+      return line;
+    }
+  } catch {
+    // 插件不可达就跳过，不影响状态查询
+  }
+
+  activityCache.set(sessionId, { at: Date.now(), text: undefined });
+  return undefined;
+}
+
 /** 缓存「哪些会话正在跑」，避免每个请求都问一次插件。 */
 let runningCache = { at: 0, ids: new Set(), ok: false };
 
@@ -670,6 +697,11 @@ const server = createServer(async (req, res) => {
       const forwardError = readJson(join(dir, 'forward-error.json'));
       const computed = jobState(dir, job);
       const stalled = computed.stalled === true;
+      // 直接读会话正在做什么（最近的工具调用 / 助手发言），不依赖会话主动上报
+      const targetSession = (forwarded && forwarded.targetSessionId) || job.targetSessionId;
+      const activity = computed.status === 'processing' || computed.status === 'forwarded'
+        ? await latestActivity(targetSession)
+        : undefined;
       const status = stalled ? 'stalled' : computed.status;
       const message = stalled
         ? `这个任务停在电脑上（${computed.stallReason || '没有产出结果'}），可以重新派发`
@@ -687,6 +719,7 @@ const server = createServer(async (req, res) => {
 
       return json(res, 200, {
         ...(progressLog.length > 0 ? { progress: progressLog } : {}),
+        ...(activity === undefined ? {} : { activity }),
         id,
         status,
         createdAt: job.createdAt,
