@@ -350,18 +350,29 @@ const server = createServer(async (req, res) => {
       }
       const scope = workspaceSessionIds();
       try {
+        // 新会话默认必须是完全权限，否则写答案文件时还要人工批准
+        await supervisorCommand({ op: 'ensureFullAccess' });
         const outcome = await supervisorCommand({
           op: 'createSession',
           ...(scope === null ? { cwd: workspacePath } : { workspaceId: scope.id }),
           ...(typeof payload.title === 'string' && payload.title.trim() !== '' ? { title: payload.title.trim() } : {}),
           ...(typeof payload.agentPreset === 'string' && payload.agentPreset.trim() !== '' ? { agentPreset: payload.agentPreset.trim() } : {}),
         });
+        const created = outcome.body ?? {};
+        const fresh = typeof created.sessionId === 'string' ? created.sessionId : '';
+        if (fresh !== '') {
+          // 建完再对这个会话单独切一次，覆盖已存在的会话
+          try {
+            await supervisorCommand({ op: 'ensureFullAccess', sessionId: fresh });
+          } catch (error) {
+            console.warn(`session ${fresh} created but permission switch failed: ${error.message}`);
+          }
+        }
         return json(res, outcome.status === undefined ? 200 : outcome.status, outcome.body);
       } catch (error) {
         return json(res, 502, { ok: false, code: 'SUPERVISOR_UNREACHABLE', message: error.message });
       }
     }
-
     if (req.method === 'POST' && (url.pathname === '/api/sessions/start' || url.pathname === '/api/sessions/send')) {
       let payload;
       try {

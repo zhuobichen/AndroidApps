@@ -190,6 +190,21 @@ public class MainActivity extends AppCompatActivity {
         return android.os.Build.VERSION.SDK_INT >= 23 ? getColor(resId) : 0xFF5B6472;
     }
 
+    /** 状态点跟着阶段变色：一眼看出现在是什么状态。 */
+    private void dotFor(String s) {
+        int color = 0xFF2F6BFF;
+        if (s != null) {
+            if (s.contains("完成") || s.contains("恢复")) color = 0xFF1E9E63;
+            else if (s.contains("中断") || s.contains("失败") || s.contains("错误")) color = 0xFFC5372C;
+            else if (s.contains("等待") || s.contains("确认")) color = 0xFFC77700;
+        }
+        final int tint = color;
+        ui.post(() -> {
+            View dot = findViewById(R.id.dotPhase);
+            if (dot != null) dot.setBackgroundColor(tint);
+        });
+    }
+
     /** 状态卡标题：一句话说清现在处于哪一步。 */
     private void phase(String s) {
         ui.post(() -> {
