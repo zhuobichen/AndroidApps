@@ -68,16 +68,51 @@ preflight.cmd
 | `tail` | 读会话最近消息 |
 | `ensureFullAccess` | 把新会话默认权限设成完全权限 |
 
-安装步骤：
+### 源码位置
 
-1. 拿到该包的目录
-2. 放成软链接或复制到 DSH 的 profile 下：
-   ```
-   <DSH_HOME>/profiles/web/node_modules/@zhuobichen/dsh-agent-supervisor
-   ```
-3. 在 `profiles/web/cordis.yml` 里注册该插件（或通过插件管理器加载）
-4. **重启 DSH**
-5. 再跑一次 `preflight.cmd`，第 3 项应该通过
+公开仓库：**https://github.com/zhuobichen/zhaowen-dsh**
+
+插件在 `packages/dsh-agent-supervisor/`，是纯 JS，不需要编译。
+
+### 安装（Windows 示例）
+
+```powershell
+# 1. 拉仓库（随便放哪，下文用 D:/zhaowen-dsh）
+git clone https://github.com/zhuobichen/zhaowen-dsh.git D:/zhaowen-dsh
+
+# 2. 进 DSH 的 web profile
+cd <DSH_HOME>/profiles/web
+
+# 3. 挂成本地依赖（link: 指向刚才 clone 的目录）
+#    也可以直接 npm install D:/zhaowen-dsh/packages/dsh-agent-supervisor
+npm pkg set "dependencies.@zhuobichen/dsh-agent-supervisor=link:D:/zhaowen-dsh/packages/dsh-agent-supervisor"
+
+# 4. 让 node_modules 里出现这个包（软链或复制都行）
+npm install --no-audit --no-fund
+```
+
+### 在 cordis.yml 里注册
+
+打开 `<DSH_HOME>/profiles/web/cordis.yml`，在插件列表里加两条：
+
+```yaml
+  - id: agent-supervisor
+    name: '@zhuobichen/dsh-agent-supervisor'
+```
+
+（`id` 随便起，`name` 必须和包名一致。）
+
+### 重启并验证
+
+```powershell
+# 重启 DSH，然后：
+Invoke-RestMethod http://127.0.0.1:3080/dsh-agent-supervisor/command `
+  -Method Post -ContentType application/json -Body '{"op":"list"}'
+```
+
+能返回 `{"ok":true,"count":N,"sessions":[...]}` 就装好了。
+
+或者直接双击 `preflight.cmd`，第 3 项会显示结果。
 
 > 这个路由只监听 127.0.0.1，不对外网开放。手机从来不直接访问它，只经由桥接转发。
 
