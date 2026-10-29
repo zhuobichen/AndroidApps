@@ -149,18 +149,96 @@ async function readJsonBody(req, limit) {
   return raw === '' ? {} : JSON.parse(raw);
 }
 
+/** 派发出去多久还没回完成标记，就认为那次解析已经中断（兜底，主要靠会话是否在跑）。 */
+const STALL_MINUTES = Number(process.env.VIDEOQUIZ_STALL_MINUTES || 45);
+/** 刚派发的前几分钟允许会话启动，不判死。 */
+const STARTUP_GRACE_MINUTES = 3;
+
+/** 缓存「哪些会话正在跑」，避免每个请求都问一次插件。 */
+let runningCache = { at: 0, ids: new Set(), ok: false };
+
+async function refreshRunningSessions() {
+  if (Date.now() - runningCache.at < 8000) return runningCache;
+  try {
+    const outcome = await supervisorCommand({ op: 'list' });
+    const sessions = outcome?.body?.sessions;
+    if (Array.isArray(sessions)) {
+      const ids = new Set();
+      for (const session of sessions) {
+        if (session && session.running && typeof session.sessionId === 'string') ids.add(session.sessionId);
+      }
+      runningCache = { at: Date.now(), ids, ok: true };
+      return runningCache;
+    }
+  } catch {
+    // 插件不可达就退回时间判断
+  }
+  runningCache = { at: Date.now(), ids: new Set(), ok: false };
+  return runningCache;
+}
+
 function jobState(dir, job) {
   const done = readJson(join(dir, 'done.json'));
   const forwarding = readJson(join(dir, 'forwarding.json'));
   const forwarded = readJson(join(dir, 'forwarded.json'));
   const processing = existsSync(join(dir, 'processing.json'));
+
+  // 已派发但长时间没有 done.json：可能是解析被中断（DSH 重启、会话被杀），
+  // 这时不能一直显示「处理中」，要明确告诉用户它停了。
+  let stalled = false;
+  let idleMinutes = 0;
+  let reason;
+  if (done === null && (processing || forwarded !== null || forwarding !== null)) {
+    const newest = newestMtime(dir);
+    idleMinutes = Math.floor((Date.now() - newest) / 60000);
+    const target = forwarded?.targetSessionId || job.targetSessionId;
+    const running = runningCache.ok && target ? runningCache.ids.has(target) : null;
+
+    if (idleMinutes >= STALL_MINUTES) {
+      stalled = true;
+      reason = `超过 ${STALL_MINUTES} 分钟没有结果`;
+    } else if (running === false && idleMinutes >= STARTUP_GRACE_MINUTES) {
+      // 会话根本没在跑，说明那次解析已经停了
+      stalled = true;
+      reason = '负责这个任务的会话已经不在运行';
+    }
+  }
+
   return {
     done,
     processing,
     forwarded,
     forwarding,
-    status: done ? 'complete' : processing ? 'processing' : forwarded ? 'forwarded' : forwarding ? 'forwarding' : job.status || 'uploaded',
+    stalled,
+    idleMinutes,
+    ...(reason === undefined ? {} : { stallReason: reason }),
+    status: done
+      ? 'complete'
+      : stalled
+        ? 'stalled'
+        : processing
+          ? 'processing'
+          : forwarded
+            ? 'forwarded'
+            : forwarding
+              ? 'forwarding'
+              : job.status || 'uploaded',
   };
+}
+
+/** 目录里最新的文件修改时间，用来判断任务是否还在推进。 */
+function newestMtime(dir) {
+  let newest = 0;
+  try {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      const stamp = statSync(full).mtimeMs;
+      if (stamp > newest) newest = stamp;
+    }
+  } catch {
+    return Date.now();
+  }
+  return newest || Date.now();
 }
 
 async function sendToSession(id, job) {
@@ -489,6 +567,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && url.pathname === '/api/jobs') {
+      await refreshRunningSessions();
       const jobs = [];
       for (const id of await readdir(jobsRoot)) {
         const dir = join(jobsRoot, id);
@@ -517,6 +596,7 @@ const server = createServer(async (req, res) => {
     const match = url.pathname.match(/^\/api\/jobs\/([0-9a-f-]{36})(?:\/(status|result|files\/([^/]+)))?$/i);
     if (!match) return json(res, 404, { error: 'not found' });
     const [, id, action = 'status', encodedName] = match;
+    await refreshRunningSessions();
     const dir = jobPath(id);
     if (!dir || !existsSync(join(dir, 'job.json'))) return json(res, 404, { error: 'job not found' });
     const job = readJson(join(dir, 'job.json'));
@@ -527,9 +607,24 @@ const server = createServer(async (req, res) => {
       const files = done ? listFiles(dir, done) : [];
       const forwarded = readJson(join(dir, 'forwarded.json'));
       const forwardError = readJson(join(dir, 'forward-error.json'));
-      const status = done ? 'complete' : processing ? 'processing' : forwarded ? 'forwarded' : forwardError ? 'notification_failed' : 'uploaded';
-      const message = done?.message || (processing ? '电脑 Harness 正在处理' : forwarded ? `已注入目标 Harness 会话 ${forwarded.targetSessionId}` : forwardError ? `已上传，自动通知失败：${forwardError.message}` : '等待会话注入');
-      return json(res, 200, { id, status, createdAt: job.createdAt, size: job.size, message, ...(forwardError ? { notificationError: forwardError.message } : {}), files });
+      const computed = jobState(dir, job);
+      const stalled = computed.stalled === true;
+      const status = stalled
+        ? 'stalled'
+        : done ? 'complete' : processing ? 'processing' : forwarded ? 'forwarded' : forwardError ? 'notification_failed' : 'uploaded';
+      const message = stalled
+        ? `这个任务停在电脑上（${computed.stallReason || '没有产出结果'}），可以重新派发`
+        : done?.message || (processing ? '电脑 Harness 正在处理' : forwarded ? `已注入目标 Harness 会话 ${forwarded.targetSessionId}` : forwardError ? `已上传，自动通知失败：${forwardError.message}` : '等待会话注入');
+      return json(res, 200, {
+        id,
+        status,
+        createdAt: job.createdAt,
+        size: job.size,
+        message,
+        ...(computed.idleMinutes ? { idleMinutes: computed.idleMinutes } : {}),
+        ...(forwardError ? { notificationError: forwardError.message } : {}),
+        files,
+      });
     }
     if (req.method === 'GET' && action === 'result') {
       if (!done) return json(res, 409, { error: 'result not ready' });

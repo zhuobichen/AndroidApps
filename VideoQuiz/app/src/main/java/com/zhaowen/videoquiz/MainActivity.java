@@ -326,6 +326,20 @@ public class MainActivity extends AppCompatActivity {
                 String retry = "电脑收到了视频，但没能通知处理会话：" + state.optString("notificationError", "未知错误");
                 ui.post(() -> tvResult.setText(retry + "\n\n视频已保存在电脑上。检查电脑端桥接服务后可以重试通知。\n\n任务号：" + id));
             }
+            if ("stalled".equals(phase)) {
+                final String stuckId = id;
+                ui.post(() -> {
+                    phase("上一次解析已中断");
+                    status("这个任务在电脑上停住了（没有产出结果），可以重新派发或忽略");
+                    progress.setProgress(0);
+                    setBusy(false);
+                    com.google.android.material.button.MaterialButton retry = findViewById(R.id.btnDispatch);
+                    retry.setText("重新派发这个任务");
+                    retry.setVisibility(View.VISIBLE);
+                });
+                prefs.setBridgeJobId("");
+                return;
+            }
             final boolean waitingDispatch = "uploaded".equals(phase);
             ui.post(() -> {
                 com.google.android.material.button.MaterialButton dispatchBtn = findViewById(R.id.btnDispatch);
