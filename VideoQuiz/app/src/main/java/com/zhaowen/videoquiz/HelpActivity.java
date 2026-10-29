@@ -42,6 +42,22 @@ public class HelpActivity extends AppCompatActivity {
         space();
         para("典型场景：整卷考试后讲解、错题复盘、把老师讲评的视频整理成文字稿。");
 
+        heading("开始之前：电脑得先装好");
+        para("这个 App 本身不会解题。它只是把视频传给电脑，电脑上的 DSH 负责读题、算答案、排版 PDF。"
+                + "所以电脑上必须装齐下面这些，少一样都跑不起来。");
+        space();
+        bullet("Node.js 20 或更高版本 —— 桥接服务跑在它上面。");
+        bullet("DSH（DeepSeek Harness）—— 真正干活的那个。浏览器能打开 http://127.0.0.1:3080 才算装好。");
+        bullet("会话管理插件 @zhuobichen/dsh-agent-supervisor —— 第三方插件，不是 DSH 自带的。"
+                + "没装的话，手机端选会话、建会话、派发、追问全部不可用。");
+        bullet("桥接服务 bridge/server.mjs —— 就是本 App 的电脑端，负责收视频、投任务、回传结果。");
+        bullet("一个工作区（比如叫「视频成卷」）—— 任务都投在这里，防止乱窜。");
+        space();
+        para("电脑端目录里有个 preflight.cmd，双击它会逐项检查上面这些，告诉你还缺什么、怎么补。"
+                + "装完或连不上时，先跑它。");
+        space();
+        para("详细部署步骤见电脑端 bridge/README.md，里面有每一项的安装方法和常见问题。");
+
         heading("第一次用：电脑端");
         para("1. 电脑上装好 DSH（DeepSeek Harness），能正常打开网页界面。");
         para("2. 启动桥接服务。最省事的方式是双击 bridge\\start.cmd，它已经带好了工作区锁定和双栈监听。");
