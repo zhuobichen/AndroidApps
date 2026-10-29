@@ -215,78 +215,6 @@
         android:visibility="gone"
         app:cornerRadius="16dp" />
 
-    <!-- 追问面板：结果出来后才出现 -->
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/chatCard"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="14dp"
-        android:layout_marginTop="6dp"
-        android:layout_marginEnd="14dp"
-        android:visibility="gone"
-        app:cardBackgroundColor="@color/surface"
-        app:cardCornerRadius="18dp"
-        app:cardElevation="0dp"
-        app:strokeColor="@color/divider"
-        app:strokeWidth="1dp">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="12dp">
-
-            <TextView
-                android:id="@+id/tvChatTarget"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="继续追问 · 正在确认会话…"
-                android:textColor="@color/text_tertiary"
-                android:textSize="11sp" />
-
-            <ScrollView
-                android:layout_width="match_parent"
-                android:layout_height="180dp"
-                android:layout_marginTop="6dp">
-
-                <LinearLayout
-                    android:id="@+id/chatList"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical" />
-            </ScrollView>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:orientation="horizontal">
-
-                <EditText
-                    android:id="@+id/chatInput"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:hint="例如：第 18 题第 (2) 问为什么这样设？"
-                    android:inputType="textMultiLine"
-                    android:maxLines="3"
-                    android:textSize="13sp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/chatSend"
-                    android:layout_width="wrap_content"
-                    android:layout_height="44dp"
-                    android:layout_marginStart="8dp"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
-                    android:minWidth="0dp"
-                    android:text="发送"
-                    android:textSize="13sp"
-                    app:cornerRadius="14dp" />
-            </LinearLayout>
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
     <!-- 结果区 -->
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
@@ -318,5 +246,79 @@
                 android:textSize="13sp"
                 android:textIsSelectable="true" />
         </ScrollView>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- 追问面板：结果出来后才出现 -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/chatCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="14dp"
+        android:layout_marginTop="6dp"
+        android:layout_marginEnd="14dp"
+        android:visibility="gone"
+        app:cardBackgroundColor="@color/surface"
+        app:cardCornerRadius="18dp"
+        app:cardElevation="0dp"
+        app:strokeColor="@color/divider"
+        app:strokeWidth="1dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="12dp">
+
+            <TextView
+                android:id="@+id/tvChatTarget"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="继续追问 · 正在确认会话…"
+                android:textColor="@color/text_tertiary"
+                android:textSize="11sp" />
+
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="140dp"
+                android:layout_marginTop="6dp">
+
+                <LinearLayout
+                    android:id="@+id/chatList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+            </ScrollView>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal">
+
+                <EditText
+                    android:id="@+id/chatInput"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="例如：第 18 题第 (2) 问为什么这样设？"
+                    android:inputType="textMultiLine"
+                    android:maxLines="3"
+                    android:minHeight="44dp"
+                    android:imeOptions="actionSend"
+                    android:textSize="13sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/chatSend"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="8dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:text="发送"
+                    android:textSize="13sp"
+                    app:cornerRadius="14dp" />
+            </LinearLayout>
+        </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 </LinearLayout>

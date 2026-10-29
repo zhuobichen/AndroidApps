@@ -65,6 +65,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvVideo, tvStatus, tvResult, tvPhase, tvEndpoint;
     private ProgressBar progress;
     private String chatJob;
+    private String lastChatSignature;
     private String chatPollingJob;
 
     private final ActivityResultLauncher<String[]> picker =
@@ -1524,6 +1525,7 @@ public class MainActivity extends AppCompatActivity {
     private void resetHistorySelection() {
         chatJob = null;
         chatPollingJob = null;
+        lastChatSignature = null;
         ui.post(() -> {
             View card = findViewById(R.id.chatCard);
             if (card != null) card.setVisibility(View.GONE);
@@ -1576,6 +1578,16 @@ public class MainActivity extends AppCompatActivity {
 
     private void renderChat(JSONArray messages) {
         if (messages == null) return;
+        // 内容没变就不重建视图：每 3 秒重排 30 个气泡会让输入框打字发卡
+        StringBuilder signature = new StringBuilder();
+        for (int i = 0; i < messages.length(); i++) {
+            JSONObject m = messages.optJSONObject(i);
+            if (m == null) continue;
+            signature.append(m.optString("id", "")).append('|').append(m.optString("text", "").length()).append(';');
+        }
+        String sig = signature.toString();
+        if (sig.equals(lastChatSignature)) return;
+        lastChatSignature = sig;
         ui.post(() -> {
             LinearLayout list = findViewById(R.id.chatList);
             if (list == null) return;
