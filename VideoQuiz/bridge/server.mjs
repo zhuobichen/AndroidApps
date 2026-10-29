@@ -500,6 +500,12 @@ const server = createServer(async (req, res) => {
           videoPath: join(dir, job.storedName),
           resultsPath: join(dir, 'results'),
           status: state.status,
+          ...(readJson(join(dir, 'forwarded.json'))
+            ? {
+                targetSessionId: readJson(join(dir, 'forwarded.json')).targetSessionId,
+                targetSessionTitle: readJson(join(dir, 'forwarded.json')).targetTitle,
+              }
+            : (job.targetSessionId ? { targetSessionId: job.targetSessionId } : {})),
           ...(state.forwarded ? { forwardedAt: state.forwarded.forwardedAt, targetSessionId: state.forwarded.targetSessionId } : {}),
           ...(readJson(join(dir, 'forward-error.json')) ? { notificationError: readJson(join(dir, 'forward-error.json')).message } : {}),
         });

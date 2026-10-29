@@ -1604,6 +1604,7 @@ public class MainActivity extends AppCompatActivity {
                 final ArrayList<String> ids = new ArrayList<>();
                 final ArrayList<String> labels = new ArrayList<>();
                 final ArrayList<Boolean> doneFlags = new ArrayList<>();
+                final ArrayList<String> sessionTitles = new ArrayList<>();
                 if (arr != null) {
                     for (int i = arr.length() - 1; i >= 0 && labels.size() < 30; i--) {
                         JSONObject o = arr.getJSONObject(i);
@@ -1614,8 +1615,11 @@ public class MainActivity extends AppCompatActivity {
                         long size = o.optLong("size", 0);
                         String when = o.optString("createdAt", "");
                         if (when.length() >= 16) when = when.substring(5, 16).replace('T', ' ');
+                        String who = o.optString("targetSessionTitle", "");
                         ids.add(id);
-                        labels.add(when + " · " + name + " · " + size / 1024 / 1024 + "MB · " + state);
+                        sessionTitles.add(who);
+                        labels.add(when + " · " + name + " · " + (size / 1024 / 1024) + "MB · " + state
+                                + (who.isEmpty() ? "" : " · " + who));
                         doneFlags.add("complete".equals(state));
                     }
                 }
@@ -1631,6 +1635,7 @@ public class MainActivity extends AppCompatActivity {
                                 status("这条任务状态是 " + labels.get(which) + "，没有结果可下载");
                                 return;
                             }
+                            prepareHistoryView(ids.get(which), sessionTitles.get(which));
                             downloadJobResults(ids.get(which));
                         })
                         .show());
@@ -1641,6 +1646,27 @@ public class MainActivity extends AppCompatActivity {
         }, "history").start();
     }
 
+    /** 选中历史后立刻把界面切过去：会话名、追问面板、PDF 按钮占位，都不等下载。 */
+    private void prepareHistoryView(String jobId, String sessionTitle) {
+        chatJob = jobId;
+        String who = sessionTitle == null || sessionTitle.isEmpty() ? "（未知会话）" : sessionTitle;
+        ui.post(() -> {
+            phase("历史结果");
+            tvVideo.setText("任务 " + jobId.substring(0, 8) + " · 会话：" + who);
+            status("正在下载结果文件…");
+            View card = findViewById(R.id.chatCard);
+            if (card != null) card.setVisibility(View.VISIBLE);
+            TextView label = findViewById(R.id.tvChatTarget);
+            if (label != null) label.setText("继续追问 · 会话：" + who + "（只追加消息，不重新生成 PDF）");
+            tvResult.setText("正在从电脑取回这次任务的结果…");
+            View pdfBtn = findViewById(R.id.btnPdf);
+            if (pdfBtn != null) {
+                pdfBtn.setVisibility(View.VISIBLE);
+                pdfBtn.setEnabled(false);
+            }
+        });
+        startChatPolling(jobId);
+    }
     /** 把某个已完成任务的结果文件重新下载到手机并展示文本。 */
     private void downloadJobResults(String id) {
         status("正在下载 " + id.substring(0, 8) + " 的结果…");
@@ -1666,6 +1692,7 @@ public class MainActivity extends AppCompatActivity {
                     pdfBtn.setVisibility(bridgeFiles.isEmpty() ? View.GONE : View.VISIBLE);
                     pdfBtn.setEnabled(!bridgeFiles.isEmpty());
                     phase("已恢复历史结果");
+                    status("结果已下载，可打开 PDF 或继续追问");
                 });
                 showChatFor(id);
                 status("已下载 " + bridgeFiles.size() + " 个文件");
