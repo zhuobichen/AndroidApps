@@ -140,6 +140,7 @@ public class MainActivity extends AppCompatActivity {
         // 从任务队列点「打开结果」进来：直接定位到那个任务
         String openJob = getIntent() == null ? null : getIntent().getStringExtra("openJob");
         if (openJob != null && !openJob.isEmpty()) {
+            showEndpoint();
             prepareHistoryView(openJob, prefs.bridgeSessionTitle());
             new Thread(() -> downloadJobResults(openJob), "open-job").start();
             return;
@@ -328,6 +329,15 @@ public class MainActivity extends AppCompatActivity {
             JSONObject state = bridgeRequest("GET", "/api/jobs/" + id + "/status", null, null, 0);
             String phase = state.optString("status", "uploaded");
             String message = state.optString("message", "等待电脑处理");
+            // 会话主动上报的进度：「现在做到哪一步」
+            JSONArray progressLog = state.optJSONArray("progress");
+            if (progressLog != null && progressLog.length() > 0) {
+                JSONObject latest = progressLog.optJSONObject(progressLog.length() - 1);
+                if (latest != null) {
+                    String now = latest.optString("text", "").trim();
+                    if (!now.isEmpty()) message = now;
+                }
+            }
             polls++;
             long seconds = (System.currentTimeMillis() - started) / 1000;
             String waited = seconds < 60 ? seconds + " 秒" : (seconds / 60) + " 分 " + (seconds % 60) + " 秒";

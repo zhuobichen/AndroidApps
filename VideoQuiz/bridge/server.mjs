@@ -282,6 +282,7 @@ async function sendToSession(id, job, options = {}) {
       `回传服务地址：${completionUrl}`,
       `本机桥接辅助脚本：${join(here, 'task.ps1')}`,
       `任务要求：${job.task}`,
+      `进度上报（重要）：每完成一个阶段，运行 task.ps1：Operation=progress、BaseUrl=${completionUrl}、Id=${id}、Text="一句话说明现在做到哪一步"，例如「已抽帧 32 张」「读到第 18 题」「正在排版 PDF」。手机端会实时显示这句话，用户据此判断你还在干活。整卷任务建议每 2-3 分钟至少上报一次。`,
       `请先运行本机 pwsh 的 task.ps1：Operation=claim、BaseUrl=${completionUrl}、Id=${id}、IncludeVideoPath，拿到路径后读取视频、完成题目，在结果目录写入三个文件：① answers.pdf（完整版，题目+答案）；② answers_only.pdf（速查版，只列题号与答案，不抄题目原文，一页能扫完）；③ answers.txt（纯文本摘要）。完成后再次运行 task.ps1：Operation=complete、BaseUrl=${completionUrl}、Id=${id}、Text=结果摘要、FilesJson='[{"name":"answers.pdf","mimeType":"application/pdf"},{"name":"answers_only.pdf","mimeType":"application/pdf"},{"name":"answers.txt","mimeType":"text/plain"}]'。脚本自行读取本机 token.txt，禁止读取/展示/写入对话。不要改写视频源文件。`,
     ].join('\n');
 
@@ -565,6 +566,37 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { ...job, videoPath: join(dir, job.storedName), resultsPath: join(dir, 'results') });
     }
 
+    // 会话主动上报进度：追加到 progress.json，App 轮询时显示「现在做到哪一步」
+    if (req.method === 'POST' && url.pathname === '/api/jobs/progress') {
+      let payload;
+      try {
+        payload = await readJsonBody(req, 16 * 1024);
+      } catch (error) {
+        return json(res, 400, { ok: false, code: 'BAD_JSON', message: error.message });
+      }
+
+      const id = typeof payload.id === 'string' ? payload.id : '';
+      const text = typeof payload.text === 'string' ? payload.text.trim() : '';
+      const dir = id === '' ? null : jobPath(id);
+
+      if (!dir || !existsSync(join(dir, 'job.json'))) return json(res, 404, { ok: false, code: 'JOB_NOT_FOUND' });
+      if (text === '') return json(res, 400, { ok: false, code: 'EMPTY_TEXT' });
+
+      const file = join(dir, 'progress.json');
+      let entries = [];
+      try {
+        const existing = readJson(file);
+        if (Array.isArray(existing)) entries = existing;
+      } catch {}
+
+      entries.push({ at: new Date().toISOString(), text });
+      // 只留最近 50 条，避免文件无限增长
+      if (entries.length > 50) entries = entries.slice(-50);
+      writeFileSync(file, JSON.stringify(entries), 'utf8');
+
+      return json(res, 200, { ok: true, id, count: entries.length });
+    }
+
     if (req.method === 'POST' && url.pathname === '/api/jobs/complete') {
       let body = '';
       for await (const chunk of req) {
@@ -644,7 +676,17 @@ const server = createServer(async (req, res) => {
         : computed.status === 'cancelled'
         ? '这个任务已被取消'
         : done?.message || (processing ? '电脑 Harness 正在处理' : forwarded ? `已注入目标 Harness 会话 ${forwarded.targetSessionId}` : forwardError ? `已上传，自动通知失败：${forwardError.message}` : '等待会话注入');
+      const progressLog = (() => {
+        try {
+          const entries = readJson(join(dir, 'progress.json'));
+          return Array.isArray(entries) ? entries.slice(-5) : [];
+        } catch {
+          return [];
+        }
+      })();
+
       return json(res, 200, {
+        ...(progressLog.length > 0 ? { progress: progressLog } : {}),
         id,
         status,
         createdAt: job.createdAt,

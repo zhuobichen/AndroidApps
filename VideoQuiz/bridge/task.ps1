@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('claim', 'complete')]
+    [ValidateSet('claim', 'complete', 'progress')]
     [string]$Operation,
     [Parameter(Mandatory = $true)]
     [string]$BaseUrl,
@@ -33,7 +33,16 @@ if ($Operation -eq 'complete') {
     $payload.files = @($files)
 }
 
+if ($Operation -eq 'progress') {
+    if ([string]::IsNullOrWhiteSpace($Text)) { throw 'progress 需要 -Text 说明当前进度。' }
+    $payload.text = $Text
+}
+
 $body = ConvertTo-Json -InputObject $payload -Depth 8 -Compress
-$uri = if ($Operation -eq 'claim') { "$($BaseUrl.TrimEnd('/'))/api/jobs/claim" } else { "$($BaseUrl.TrimEnd('/'))/api/jobs/complete" }
+$uri = switch ($Operation) {
+    'claim' { "$($BaseUrl.TrimEnd('/'))/api/jobs/claim" }
+    'complete' { "$($BaseUrl.TrimEnd('/'))/api/jobs/complete" }
+    'progress' { "$($BaseUrl.TrimEnd('/'))/api/jobs/progress" }
+}
 $result = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -ContentType 'application/json; charset=utf-8' -Body $body
 $result | ConvertTo-Json -Depth 8 -Compress
