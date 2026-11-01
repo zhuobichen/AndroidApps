@@ -66,6 +66,14 @@ public class Prefs {
         return sp.getString("bridgeSessionTitle", "");
     }
 
+    /** 逐题模式下当前使用的任务 id（每拍一张都追加到同一会话）。 */
+    public String shotJobId() {
+        return sp.getString("shotJobId", "");
+    }
+
+    public void setShotJobId(String id) {
+        sp.edit().putString("shotJobId", id == null ? "" : id).apply();
+    }
     /** 上传完是否立刻派发任务。默认 false：必须由用户点「开始处理」确认。 */
     public boolean bridgeAutoDispatch() {
         return sp.getBoolean("bridgeAutoConfirm", false);

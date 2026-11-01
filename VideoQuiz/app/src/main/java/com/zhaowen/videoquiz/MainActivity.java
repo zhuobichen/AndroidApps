@@ -70,6 +70,24 @@ public class MainActivity extends AppCompatActivity {
     private String lastChatSignature;
     private String chatPollingJob;
 
+    private File pendingShotFile;
+    private android.net.Uri pendingShotUri;
+
+    /** 系统相机：全尺寸写到 EXTRA_OUTPUT 指定的 URI，不经过缩略图中转。 */
+    private final ActivityResultLauncher<Intent> shotLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+                    result -> {
+                        File shot = pendingShotFile;
+                        pendingShotFile = null;
+                        pendingShotUri = null;
+                        if (result.getResultCode() != RESULT_OK || shot == null || !shot.isFile()) return;
+                        if (shot.length() < 20 * 1024) {
+                            status("这张照片异常小（" + (shot.length() / 1024) + "KB），可能相机没写原图；重拍一次或换系统相机");
+                            return;
+                        }
+                        uploadShot(shot);
+                    });
+
     private final ActivityResultLauncher<String[]> picker =
             registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> {
                 if (uri == null) return;
@@ -98,6 +116,7 @@ public class MainActivity extends AppCompatActivity {
         progress = findViewById(R.id.progress);
 
         findViewById(R.id.btnPick).setOnClickListener(v -> picker.launch(new String[]{"video/*"}));
+        findViewById(R.id.btnShot).setOnClickListener(v -> takeShot());
         findViewById(R.id.btnRun).setOnClickListener(v -> run());
         findViewById(R.id.btnSolve).setOnClickListener(v -> solve());
         findViewById(R.id.btnPdf).setOnClickListener(v -> makePdf());
@@ -463,6 +482,120 @@ public class MainActivity extends AppCompatActivity {
             throw t;
         }
         return staged;
+    }
+
+    /** 打开系统相机，把全尺寸原图写到 App 私有目录（不进相册、不压缩中转）。 */
+    private void takeShot() {
+        try {
+            File dir = new File(getExternalFilesDir(null), "shots");
+            if (!dir.exists() && !dir.mkdirs()) throw new IllegalStateException("无法创建拍照目录");
+
+            pendingShotFile = new File(dir, "shot_" + System.currentTimeMillis() + ".jpg");
+            pendingShotUri = FileProvider.getUriForFile(this,
+                    getPackageName() + ".fileprovider", pendingShotFile);
+
+            Intent intent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+            intent.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, pendingShotUri);
+            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            if (intent.resolveActivity(getPackageManager()) == null) {
+                status("这台手机没有可用的相机应用");
+                return;
+            }
+            phase("拍一题");
+            status("拍完会自动上传，原图不压缩");
+            shotLauncher.launch(intent);
+        } catch (Throwable e) {
+            pendingShotFile = null;
+            pendingShotUri = null;
+            status("打开相机失败：" + (e.getMessage() == null ? e.toString() : e.getMessage()));
+        }
+    }
+
+    /** 把一张题目照片追加到逐题任务；没有任务就先建一个。 */
+    private void uploadShot(File photo) {
+        if (!prefs.bridgeMode()) {
+            status("逐题模式需要先切到「电脑 Harness」");
+            return;
+        }
+
+        final long bytes = photo.length();
+        status("正在上传 " + (bytes / 1024) + "KB 原图…");
+        phase("发送第 N 题");
+
+        new Thread(() -> {
+            try {
+                String jobId = prefs.shotJobId();
+
+                if (jobId == null || jobId.isEmpty()) {
+                    JSONObject body = new JSONObject();
+                    String target = prefs.bridgeSessionId();
+                    if (target != null && !target.isEmpty()) body.put("sessionId", target);
+                    JSONObject created = bridgeRequest("POST", "/api/jobs/shot-start", body.toString(), "application/json", 20000);
+                    jobId = created.optString("id", "");
+                    if (jobId.isEmpty()) throw new IllegalStateException("创建逐题任务失败");
+                    prefs.setShotJobId(jobId);
+                }
+
+                JSONObject result = bridgeUploadShot(jobId, photo);
+
+                final String id = jobId;
+                final int index = result.optInt("index", 0);
+                ui.post(() -> {
+                    phase("第 " + index + " 题已发送");
+                    status("原图已保存到电脑（" + (bytes / 1024) + "KB），等会话作答。点「继续追问」可以看实时回复");
+                    chatJob = id;
+                    View chat = findViewById(R.id.btnOpenChat);
+                    if (chat != null) chat.setVisibility(View.VISIBLE);
+                });
+            } catch (Throwable e) {
+                final String message = "上传失败：" + (e.getMessage() == null ? e.toString() : e.getMessage());
+                ui.post(() -> {
+                    phase("上传失败");
+                    status(message);
+                });
+            }
+        }, "shot-upload").start();
+    }
+
+    /** 原始字节流上传，不在客户端做任何压缩或缩放。 */
+    private JSONObject bridgeUploadShot(String jobId, File photo) throws Exception {
+        String encoded = android.util.Base64.encodeToString(
+                photo.getName().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                android.util.Base64.NO_WRAP);
+
+        HttpURLConnection c = (HttpURLConnection) new URL(
+                prefs.bridgeUrl() + "/api/jobs/" + jobId + "/shot").openConnection();
+        c.setRequestMethod("POST");
+        c.setConnectTimeout(20000);
+        c.setReadTimeout(120000);
+        c.setDoOutput(true);
+        c.setFixedLengthStreamingMode(photo.length());
+        c.setRequestProperty("Authorization", "Bearer " + bridgeTokenValue());
+        c.setRequestProperty("Content-Type", "application/octet-stream");
+        c.setRequestProperty("X-Shot-Name-B64", encoded);
+
+        try (java.io.InputStream in = new java.io.FileInputStream(photo);
+             OutputStream out = c.getOutputStream()) {
+            byte[] buffer = new byte[128 * 1024];
+            int n;
+            while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+        }
+
+        int code = c.getResponseCode();
+        InputStream stream = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream();
+        String body = "";
+        if (stream != null) {
+            java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+            byte[] chunk = new byte[8192];
+            int read;
+            while ((read = stream.read(chunk)) != -1) buffer.write(chunk, 0, read);
+            body = new String(buffer.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        c.disconnect();
+
+        if (code < 200 || code >= 300) throw new IllegalStateException("HTTP " + code + " " + body);
+        return body.isEmpty() ? new JSONObject() : new JSONObject(body);
     }
 
     private JSONObject bridgeUpload(String name, long length, File staged) throws Exception {

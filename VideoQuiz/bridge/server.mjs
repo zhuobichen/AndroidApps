@@ -216,7 +216,7 @@ function jobState(dir, job) {
   let stalled = false;
   let idleMinutes = 0;
   let reason;
-  if (done === null && (processing || forwarded !== null || forwarding !== null)) {
+  if (job.mode !== 'shot' && done === null && (processing || forwarded !== null || forwarding !== null)) {
     const newest = newestMtime(dir);
     idleMinutes = Math.floor((Date.now() - newest) / 60000);
     const target = forwarded?.targetSessionId || job.targetSessionId;
@@ -534,6 +534,123 @@ const server = createServer(async (req, res) => {
       }
     }
 
+    // 逐题模式：创建一个没有视频的容器任务，之后每拍一张就往里追加
+    if (req.method === 'POST' && url.pathname === '/api/jobs/shot-start') {
+      let payload;
+      try {
+        payload = await readJsonBody(req, 16 * 1024);
+      } catch (error) {
+        return json(res, 400, { ok: false, code: 'BAD_JSON', message: error.message });
+      }
+
+      const wanted = typeof payload.sessionId === 'string' ? payload.sessionId.trim() : '';
+      const scope = workspaceSessionIds();
+      let session = wanted === '' ? targetSessionId : wanted;
+
+      if (scope !== null && !scope.ids.includes(session)) {
+        session = scope.ids.includes(targetSessionId) ? targetSessionId : scope.ids[0];
+      }
+      if (!session) return json(res, 409, { ok: false, code: 'NO_SESSION' });
+
+      const id = randomUUID();
+      const dir = join(jobsRoot, id);
+      mkdirSync(dir, { recursive: true });
+      mkdirSync(join(dir, 'results'), { recursive: true });
+      mkdirSync(join(dir, 'shots'), { recursive: true });
+
+      const job = {
+        id,
+        mode: 'shot',
+        originalName: '逐题模式',
+        storedName: '',
+        size: 0,
+        status: 'shot-mode',
+        targetSessionId: session,
+        task: '逐题作答',
+        createdAt: new Date().toISOString(),
+      };
+
+      writeFileSync(join(dir, 'job.json'), JSON.stringify(job, null, 2), 'utf8');
+      writeFileSync(
+        join(dir, 'forwarded.json'),
+        JSON.stringify({ targetSessionId: session, forwardedAt: new Date().toISOString(), mode: 'shot' }),
+        'utf8',
+      );
+
+      return json(res, 200, { ok: true, id, sessionId: session });
+    }
+
+    // 逐题模式：往已有任务里追加一张题目照片，原样落盘后通知会话作答
+    const shotMatch = url.pathname.match(/^\/api\/jobs\/([0-9a-f-]{36})\/shot$/i);
+    if (req.method === 'POST' && shotMatch) {
+      const id = shotMatch[1];
+      const dir = jobPath(id);
+      const job = dir ? readJson(join(dir, 'job.json')) : null;
+      if (!job) return json(res, 404, { ok: false, code: 'JOB_NOT_FOUND' });
+
+      const length = Number(req.headers['content-length']);
+      if (!Number.isSafeInteger(length) || length <= 0) {
+        return json(res, 411, { ok: false, code: 'LENGTH_REQUIRED' });
+      }
+
+      const shotDir = join(dir, 'shots');
+      mkdirSync(shotDir, { recursive: true });
+
+      const index = (readdirSync(shotDir).filter((n) => /^q\d+\./.test(n)).length + 1);
+      const ext = (() => {
+        const raw = req.headers['x-shot-name-b64']
+          ? Buffer.from(String(req.headers['x-shot-name-b64']), 'base64').toString('utf8')
+          : 'shot.jpg';
+        const e = extname(String(raw)).toLowerCase();
+        return ['.jpg', '.jpeg', '.png', '.webp', '.heic'].includes(e) ? e : '.jpg';
+      })();
+
+      const fileName = `q${index}${ext}`;
+      const target = join(shotDir, fileName);
+      const tmp = join(shotDir, `${fileName}.uploading`);
+
+      try {
+        await pipeline(req, createWriteStream(tmp, { flags: 'wx' }));
+        const size = statSync(tmp).size;
+        if (size !== length) throw new Error(`length mismatch: expected ${length}, received ${size}`);
+        renameSync(tmp, target);
+      } catch (error) {
+        try { unlinkSync(tmp); } catch {}
+        return json(res, 500, { ok: false, code: 'SHOT_WRITE_FAILED', message: error.message });
+      }
+
+      // 通知会话：同一会话继续答，上下文保持连续
+      const forwardedInfo = readJson(join(dir, 'forwarded.json'));
+      const sessionId = (forwardedInfo && forwardedInfo.targetSessionId) || job.targetSessionId || targetSessionId;
+      const scope = workspaceSessionIds();
+      const inScope = scope === null || scope.ids.includes(sessionId);
+
+      if (!inScope) {
+        return json(res, 403, { ok: false, code: 'OUT_OF_WORKSPACE', message: '目标会话不在当前工作区' });
+      }
+
+      const prompt = [
+        `逐题模式：第 ${index} 题的题目照片已保存到本机。`,
+        `图片路径：${target}`,
+        `结果目录：${join(dir, 'results')}`,
+        '请读取这张图，识别题目原文（保留题号、公式），给出解答与答案。',
+        '把本题结果追加到结果目录的 answers.txt（没有就新建，按题号顺序累积），不要覆盖前面题目的内容。',
+        '不需要重新生成整卷 PDF；等用户说“出卷”时再统一排版。',
+        '原图是相机原图，如果文字太小看不清，可以裁切或放大后再读。',
+      ].join('\n');
+
+      try {
+        const outcome = await supervisorCommand({ op: 'send', sessionId, text: prompt });
+        if (outcome.status !== 200 || outcome.body.ok !== true) {
+          throw new Error(outcome.body.message || outcome.body.code || `HTTP ${outcome.status}`);
+        }
+      } catch (error) {
+        return json(res, 502, { ok: false, code: 'NOTIFY_FAILED', message: error.message, index, path: target });
+      }
+
+      return json(res, 200, { ok: true, id, index, path: target, sessionId });
+    }
+
     // 追问：读某个任务对应会话的最近消息 / 往该会话再发一条
     const chatMatch = url.pathname.match(/^\/api\/jobs\/([0-9a-f-]{36})\/chat$/i);
     if (chatMatch) {
@@ -590,7 +707,7 @@ const server = createServer(async (req, res) => {
       if (existsSync(join(dir, 'done.json'))) return json(res, 409, { error: 'job already completed' });
       writeFileSync(join(dir, 'processing.json'), JSON.stringify({ startedAt: new Date().toISOString() }), 'utf8');
       const job = readJson(join(dir, 'job.json'));
-      return json(res, 200, { ...job, videoPath: join(dir, job.storedName), resultsPath: join(dir, 'results') });
+      return json(res, 200, { ...job, ...(job.storedName ? { videoPath: join(dir, job.storedName) } : {}), resultsPath: join(dir, 'results') });
     }
 
     // 会话主动上报进度：追加到 progress.json，App 轮询时显示「现在做到哪一步」
@@ -663,7 +780,7 @@ const server = createServer(async (req, res) => {
         const state = jobState(dir, job);
         jobs.push({
           ...job,
-          videoPath: join(dir, job.storedName),
+          ...(job.storedName ? { videoPath: join(dir, job.storedName) } : {}),
           resultsPath: join(dir, 'results'),
           status: state.status,
           ...(readJson(join(dir, 'forwarded.json'))

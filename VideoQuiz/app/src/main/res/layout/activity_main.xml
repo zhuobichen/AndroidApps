@@ -318,6 +318,19 @@
                 app:cornerRadius="16dp" />
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnShot"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_marginStart="8dp"
+                android:layout_weight="0.8"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="拍一题"
+                android:textSize="14sp"
+                app:cornerRadius="16dp" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnRun"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="0dp"
