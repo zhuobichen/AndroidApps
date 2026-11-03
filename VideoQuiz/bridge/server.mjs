@@ -154,6 +154,101 @@ const STALL_MINUTES = Number(process.env.VIDEOQUIZ_STALL_MINUTES || 45);
 /** 刚派发的前几分钟允许会话启动，不判死。 */
 const STARTUP_GRACE_MINUTES = 3;
 
+/** Jev（typesafeai）判定层：只做选择题选答案，不给过程。配置在 data/jev.json。 */
+const jevConfigPath = join(dataRoot, 'jev.json');
+
+function jevConfig() {
+  try {
+    const raw = JSON.parse(readFileSync(jevConfigPath, 'utf8'));
+    if (typeof raw?.baseUrl !== 'string' || typeof raw?.apiKey !== 'string') return null;
+    return {
+      baseUrl: raw.baseUrl,
+      apiKey: raw.apiKey,
+      model: typeof raw.model === 'string' && raw.model !== '' ? raw.model : 'jev-latest',
+      batchSize: Number(raw.batchSize) > 0 ? Number(raw.batchSize) : 8,
+      stateCharLimit: Number(raw.stateCharLimit) > 0 ? Number(raw.stateCharLimit) : 7000,
+      minConfidence: Number.isFinite(Number(raw.minConfidence)) ? Number(raw.minConfidence) : 0.6,
+      timeoutMs: Number(raw.timeoutMs) > 0 ? Number(raw.timeoutMs) : 60000,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 把一道题压成 Jev 的 state 行。 */
+function jevStateLine(question, index) {
+  const options = question.options ?? {};
+  const optionText = Object.entries(options).map(([key, text]) => `${key}) ${String(text).replace(/\s+/g, ' ').trim()}`).join('  ');
+  return `[#${index}] ${String(question.stem ?? '').replace(/\s+/g, ' ').trim()}\n选项：${optionText}`;
+}
+
+/** 分批调 Jev，返回 { 题号 -> {choice, confidence} }。 */
+async function judgeWithJev(questions, config) {
+  const results = new Map();
+  const warnings = [];
+
+  let batch = [];
+  let batchChars = 0;
+
+  const flush = async () => {
+    if (batch.length === 0) return;
+
+    const state = batch.map((q, i) => jevStateLine(q, i)).join('\n');
+    const payload = {
+      model: config.model,
+      state,
+      questions: Object.fromEntries(batch.map((q, i) => [`m${i}`, {
+        type: 'choice',
+        instructions: `[#${i}] 这道题的正确答案是哪个选项？只选一个。`,
+        criteria: q.options ?? {},
+      }])),
+    };
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), config.timeoutMs);
+
+    try {
+      const response = await fetch(config.baseUrl, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(`HTTP ${response.status} ${text.slice(0, 200)}`);
+
+      const data = JSON.parse(text);
+      for (let i = 0; i < batch.length; i += 1) {
+        const answer = data?.answers?.[`m${i}`];
+        if (answer === undefined) continue;
+        results.set(batch[i].id, {
+          choice: answer.choice,
+          confidence: typeof answer.confidence === 'number' ? answer.confidence : 0,
+        });
+      }
+    } catch (error) {
+      warnings.push(`batch ${batch.length} 题失败：${error.message}`);
+    } finally {
+      clearTimeout(timer);
+    }
+
+    batch = [];
+    batchChars = 0;
+  };
+
+  for (const question of questions) {
+    const line = jevStateLine(question, batch.length);
+    if (batch.length >= config.batchSize || (batchChars + line.length > config.stateCharLimit && batch.length > 0)) {
+      await flush();
+    }
+    batch.push(question);
+    batchChars += line.length + 40;
+  }
+  await flush();
+
+  return { results, warnings };
+}
+
 /** 会话最近活动缓存：status 每次轮询都问插件太重，4 秒内复用。 */
 const activityCache = new Map();
 
@@ -310,7 +405,12 @@ async function sendToSession(id, job, options = {}) {
       `本机桥接辅助脚本：${join(here, 'task.ps1')}`,
       `任务要求：${job.task}`,
       `进度上报（重要）：每完成一个阶段，运行 task.ps1：Operation=progress、BaseUrl=${completionUrl}、Id=${id}、Text="一句话说明现在做到哪一步"，例如「已抽帧 32 张」「读到第 18 题」「正在排版 PDF」。手机端会实时显示这句话，用户据此判断你还在干活。整卷任务建议每 2-3 分钟至少上报一次。`,
-      `请先运行本机 pwsh 的 task.ps1：Operation=claim、BaseUrl=${completionUrl}、Id=${id}、IncludeVideoPath，拿到路径后读取视频、完成题目，在结果目录写入三个文件：① answers.pdf（完整版，题目+答案）；② answers_only.pdf（速查版，只列题号与答案，不抄题目原文，一页能扫完）；③ answers.txt（纯文本摘要）。完成后再次运行 task.ps1：Operation=complete、BaseUrl=${completionUrl}、Id=${id}、Text=结果摘要、FilesJson='[{"name":"answers.pdf","mimeType":"application/pdf"},{"name":"answers_only.pdf","mimeType":"application/pdf"},{"name":"answers.txt","mimeType":"text/plain"}]'。脚本自行读取本机 token.txt，禁止读取/展示/写入对话。不要改写视频源文件。`,
+      `第一步（只读题，先别解题）：读视频里的每一道题，把题干和选项结构化写进 ${resultsPath}\\questions.json，格式严格如下：`,
+      `{"questions":[{"id":"21","type":"choice","stem":"题干原文","options":{"A":"选项A原文","B":"..."}},{"id":"36","type":"blank","stem":"题干原文","options":null}]}`,
+      `要点：type 取 choice（有选项的选择题）/ blank（填空）/ essay（解答、作文）；只有 choice 要填 options；题干保留题号、公式、原文，不要改写或翻译。`,
+      `第二步：运行 task.ps1：Operation=ask-jev、BaseUrl=${completionUrl}、Id=${id}。它会把 questions.json 里的选择题交给一个专用判定模型批量作答，返回 decided（高置信答案）和 unresolved（拿不准的题号）。`,
+      `第三步：decided 里的题直接采用它的答案，不要重新推理；unresolved 里的题由你自己认真解。blank 和 essay 类型的题也必须你自己解。如果 ask-jev 报错（比如没配置判定模型），就把所有题都自己解，不要卡住。`,
+      `第四步：把所有题（外包得到的 + 你自己解的）合并，在结果目录写 answers.pdf（完整版，题目+答案）、answers_only.pdf（速查版，只列题号与答案）和 answers.txt；然后运行 task.ps1：Operation=complete、BaseUrl=${completionUrl}、Id=${id}、Text=结果摘要、FilesJson='[{"name":"answers.pdf","mimeType":"application/pdf"},{"name":"answers_only.pdf","mimeType":"application/pdf"},{"name":"answers.txt","mimeType":"text/plain"}]'。脚本自行读取本机 token.txt，禁止读取/展示/写入对话。不要改写视频源文件。`,
     ].join('\n');
 
     const outcome = await supervisorCommand({ op: 'send', sessionId: session, text });
@@ -578,6 +678,86 @@ const server = createServer(async (req, res) => {
       );
 
       return json(res, 200, { ok: true, id, sessionId: session });
+    }
+
+    // 判定外包：读 results/questions.json，交给 Jev 批量选答案，
+    // 高置信的直接采用，低置信的返回给会话精解。
+    if (req.method === 'POST' && url.pathname === '/api/jobs/ask-jev') {
+      let payload;
+      try {
+        payload = await readJsonBody(req, 16 * 1024);
+      } catch (error) {
+        return json(res, 400, { ok: false, code: 'BAD_JSON', message: error.message });
+      }
+
+      const id = typeof payload.id === 'string' ? payload.id : '';
+      const dir = id === '' ? null : jobPath(id);
+      if (!dir) return json(res, 404, { ok: false, code: 'JOB_NOT_FOUND' });
+
+      const config = jevConfig();
+      if (config === null) {
+        return json(res, 503, {
+          ok: false,
+          code: 'JEV_NOT_CONFIGURED',
+          message: '桥接目录下缺少 data/jev.json（需要 baseUrl / apiKey / model）',
+        });
+      }
+
+      const questionsPath = join(dir, 'results', 'questions.json');
+      if (!existsSync(questionsPath)) {
+        return json(res, 404, { ok: false, code: 'QUESTIONS_NOT_FOUND', message: 'results/questions.json 不存在' });
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(readFileSync(questionsPath, 'utf8'));
+      } catch (error) {
+        return json(res, 400, { ok: false, code: 'QUESTIONS_INVALID', message: error.message });
+      }
+
+      const all = Array.isArray(parsed?.questions) ? parsed.questions : [];
+      // 只判选择题：有 options 且至少 2 个选项
+      const choiceable = all.filter((q) => q && typeof q.id === 'string' && q.options && Object.keys(q.options).length >= 2);
+
+      if (choiceable.length === 0) {
+        return json(res, 200, { ok: true, id, judged: 0, message: '没有可判定的选择题' });
+      }
+
+      const started = Date.now();
+      const { results, warnings } = await judgeWithJev(choiceable, config);
+
+      const decided = [];
+      const needHelp = [];
+
+      for (const question of choiceable) {
+        const hit = results.get(question.id);
+        if (hit === undefined || typeof hit.choice !== 'string') {
+          needHelp.push({ id: question.id, reason: 'no_answer' });
+          continue;
+        }
+        if (hit.confidence >= config.minConfidence) {
+          decided.push({ id: question.id, answer: hit.choice, confidence: hit.confidence });
+        } else {
+          needHelp.push({ id: question.id, reason: 'low_confidence', guess: hit.choice, confidence: hit.confidence });
+        }
+      }
+
+      const out = {
+        ok: true,
+        id,
+        model: config.model,
+        minConfidence: config.minConfidence,
+        judged: choiceable.length,
+        decided: decided.length,
+        needHelp: needHelp.length,
+        answered: decided,
+        unresolved: needHelp,
+        elapsedMs: Date.now() - started,
+        ...(warnings.length > 0 ? { warnings } : {}),
+      };
+
+      writeFileSync(join(dir, 'results', 'jev-answers.json'), JSON.stringify(out, null, 2), 'utf8');
+      return json(res, 200, out);
     }
 
     // 逐题模式：往已有任务里追加一张题目照片，原样落盘后通知会话作答

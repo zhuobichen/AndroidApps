@@ -257,6 +257,62 @@ set DSH_PERMISSION_MODE=danger-full-access
 
 ---
 
+## 八点五、判定外包（可选）
+
+选择题占整卷大头，但逐题推理很慢很贵。可以把它外包给一个专用判定模型（Jev / typesafeai）：
+只做"从选项里挑一个"，不给过程，但会返回校准过的置信度。
+
+### 流程
+
+```
+DSH 读图 → 只输出 questions.json（结构化题干，不解题）
+   ↓
+桥接 POST /api/jobs/ask-jev → Jev 批量判定
+   ↓
+conf ≥ minConfidence  → decided：直接采用
+conf <  minConfidence  → unresolved：回给 DSH 精解
+   ↓
+合并 → answers.pdf / answers_only.pdf / answers.txt
+```
+
+DSH 那边只需要按提示词执行三步：写 questions.json → `task.ps1 -Operation ask-jev` → 采用 decided、精解 unresolved。
+
+### 配置
+
+把判定模型的凭据放进 `bridge/data/jev.json`（这个目录已被 gitignore）：
+
+```json
+{
+  "baseUrl": "https://api.302ai.cn/typesafeai/v1/systemone",
+  "apiKey": "sk-...",
+  "model": "jev-latest",
+  "batchSize": 8,
+  "stateCharLimit": 7000,
+  "minConfidence": 0.6,
+  "timeoutMs": 60000
+}
+```
+
+没有这个文件时 `ask-jev` 返回 503，会话会退回「全部自己解」，不影响主流程。
+
+### 实测（2026-11）
+
+| 题型 | 题数 | 正确 | 置信度 |
+| --- | --- | --- | --- |
+| 英语理解 | 4 | 4/4 | 1.0 |
+| 数学 / 逻辑 / 物理 / 语法 | 4 | 4/4 | 0.97–1.0 |
+| 中文基础（错别字/修辞/语病/文学常识） | 5 | 5/5 | 0.95–1.0 |
+| 中文词性辨析 | 1 | 猜对但 conf 0.27 | 被阈值筛出 |
+
+5 题判定耗时 **636ms**，整卷 40 道选择题成本约 **$0.0004**。
+
+### 边界
+
+- **不能读图**：state 只能是文本，前置的 OCR/读题仍然必须 DSH 做
+- **不给过程**：只返回答案，PDF 里的解析还得 DSH 写
+- **只做选择题**：blank / essay 类型原样交给 DSH
+- 中文长文本推理较弱，靠 `minConfidence` 兜住
+
 ## 九、常见问题
 
 **手机测试连接失败**

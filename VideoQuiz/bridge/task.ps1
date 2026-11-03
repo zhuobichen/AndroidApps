@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('claim', 'complete', 'progress')]
+    [ValidateSet('claim', 'complete', 'progress', 'ask-jev')]
     [string]$Operation,
     [Parameter(Mandatory = $true)]
     [string]$BaseUrl,
@@ -43,6 +43,7 @@ $uri = switch ($Operation) {
     'claim' { "$($BaseUrl.TrimEnd('/'))/api/jobs/claim" }
     'complete' { "$($BaseUrl.TrimEnd('/'))/api/jobs/complete" }
     'progress' { "$($BaseUrl.TrimEnd('/'))/api/jobs/progress" }
+    'ask-jev' { "$($BaseUrl.TrimEnd('/'))/api/jobs/ask-jev" }
 }
 $result = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -ContentType 'application/json; charset=utf-8' -Body $body
 $result | ConvertTo-Json -Depth 8 -Compress
