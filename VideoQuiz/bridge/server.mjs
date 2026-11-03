@@ -404,14 +404,18 @@ async function sendToSession(id, job, options = {}) {
       `回传服务地址：${completionUrl}`,
       `本机桥接辅助脚本：${join(here, 'task.ps1')}`,
       `任务要求：${job.task}`,
-      `进度上报（重要）：每完成一个阶段，运行 task.ps1：Operation=progress、BaseUrl=${completionUrl}、Id=${id}、Text="一句话说明现在做到哪一步"，例如「已抽帧 32 张」「读到第 18 题」「正在排版 PDF」。手机端会实时显示这句话，用户据此判断你还在干活。整卷任务建议每 2-3 分钟至少上报一次。`,
-      `第一步（只读题，先别解题）：读视频里的每一道题，把题干和选项结构化写进 ${resultsPath}\\questions.json，格式严格如下：`,
-      `{"questions":[{"id":"21","type":"choice","stem":"题干原文","options":{"A":"选项A原文","B":"..."},"needsFigure":false},{"id":"36","type":"blank","stem":"题干原文","options":null}]}`,
-      `要点：type 取 choice（有选项的选择题）/ blank（填空）/ essay（解答、作文）；只有 choice 要填 options；题干保留题号、公式、原文，不要改写或翻译。`,
-      `关键（决定外包能不能用）：如果题目依赖配套材料——阅读理解的原文段落、资料分析的统计表格、完形填空的整段短文——必须把材料文本一并写进 stem，用「材料：」开头，然后才是问题。材料是表格就转成「列名: 值」的纯文本行。只写问题不写材料，判定模型会直接判不了。`,
-      `needsFigure：题目依赖图形、图片、示意图（图形推理、几何配图、图表拿不到数据）时置 true；这类题跳过外包，由你自己解。`,
-      `第三步：decided 里的题直接采用它的答案，不要重新推理；unresolved 里的题由你自己认真解。blank 和 essay 类型的题也必须你自己解。如果 ask-jev 报错（比如没配置判定模型），就把所有题都自己解，不要卡住。`,
-      `第四步：把所有题（外包得到的 + 你自己解的）合并，在结果目录写 answers.pdf（完整版，题目+答案）、answers_only.pdf（速查版，只列题号与答案）和 answers.txt；然后运行 task.ps1：Operation=complete、BaseUrl=${completionUrl}、Id=${id}、Text=结果摘要、FilesJson='[{"name":"answers.pdf","mimeType":"application/pdf"},{"name":"answers_only.pdf","mimeType":"application/pdf"},{"name":"answers.txt","mimeType":"text/plain"}]'。脚本自行读取本机 token.txt，禁止读取/展示/写入对话。不要改写视频源文件。`,
+      `【必须执行，跳过视为任务未完成】这套流程有一条硬性要求：选择题由专用判定模型来判，不是你自己判。它一次能判上百题、11 秒出结果、成本不到一厘钱，而且每条都带置信度——有把握的它给、没把握的留给你。你自己从零推理整卷选择题要花十几分钟，属于浪费。所以下面第 2 步不能省。`,
+      `第 1 步（只读题，先别解题）：读视频里的每一道题，把题干和选项结构化写进 ${resultsPath}\\questions.json，格式严格如下：`,
+      `{"questions":[{"id":"21","type":"choice","stem":"题干原文","options":{"A":"选项A原文","B":"选项B原文","C":"选项C原文","D":"选项D原文"},"needsFigure":false,"incomplete":false},{"id":"36","type":"blank","stem":"题干原文","options":null}]}`,
+      `字段要求：type 取 choice / blank / essay；只有 choice 要填 options，且【必须四个选项齐全】——少一个就把 incomplete 置 true（判定模型看不到完整选项只会瞎猜，反而浪费）；题干保留题号、公式、原文，不要改写或翻译。`,
+      `材料必须写进 stem：阅读理解的原文段落、资料分析的统计表格、完形填空的整段短文，全部用「材料：」开头放在题干最前面，然后才是问题。表格转成「列名: 值」的纯文本行。只写问题不写材料，判定模型一定判不了——这是外包能不能用起来的分水岭。`,
+      `needsFigure：依赖图形/示意图（图形推理、几何配图、图表数据拿不到）置 true，这类跳过外包由你自己解。`,
+      `第 2 步（必须做）：写好 questions.json 后，立即执行下面这条命令，不要跳过、不要改成自己做：`,
+      `  & "${join(here, 'task.ps1')}" -Operation ask-jev -BaseUrl "${completionUrl}" -Id "${id}"`,
+      `它返回 JSON：answered 是判定模型给出且置信度达标的答案（直接采用，不要重新推理），unresolved 是它也没把握的题号（这些由你自己解），skippedFigure 是被跳过的图形题数量。如果这条命令报错（比如没配置判定模型），就把所有题都自己解，并在结果摘要里说明。`,
+      `第 3 步：answered 里的题直接抄它的答案；unresolved 里的题、所有 blank/essay、needsFigure=true 的题，由你自己认真解。`,
+      `第 4 步：合并成 answers.pdf（完整版，题目+答案）、answers_only.pdf（速查版，只列题号与答案）和 answers.txt；然后运行 task.ps1：Operation=complete、BaseUrl=${completionUrl}、Id=${id}、Text=结果摘要（要写明判定模型覆盖了多少题、你自己解了多少题）、FilesJson='[{"name":"answers.pdf","mimeType":"application/pdf"},{"name":"answers_only.pdf","mimeType":"application/pdf"},{"name":"answers.txt","mimeType":"text/plain"}]'。脚本自行读取本机 token.txt，禁止读取/展示/写入对话。不要改写视频源文件。`,
+      `进度上报（可选但推荐）：每完成一个阶段可运行 task.ps1 -Operation progress -BaseUrl ${completionUrl} -Id ${id} -Text "现在做到哪一步"，手机端会实时显示。`,
     ].join('\n');
 
     const outcome = await supervisorCommand({ op: 'send', sessionId: session, text });
@@ -725,7 +729,13 @@ const server = createServer(async (req, res) => {
         if (q === null || typeof q !== "object") return false;
         if (typeof q.id !== "string") return false;
         if (q.needsFigure === true) return false;
-        if (!q.options || Object.keys(q.options).length < 2) return false;
+        // 会话自己标了「选项不全」就别判，看不全只会瞎猜
+        if (q.incomplete === true) return false;
+        if (!q.options) return false;
+        // 选择题必须 A/B/C/D 四个选项齐全，缺一个就跳过
+        const optionKeys = Object.keys(q.options);
+        if (optionKeys.length < 4) return false;
+        if (!["A", "B", "C", "D"].every((k) => optionKeys.includes(k))) return false;
         const stem = typeof q.stem === "string" ? q.stem.trim() : "";
         return stem.length >= 12;
       });
