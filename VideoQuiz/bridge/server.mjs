@@ -7,6 +7,7 @@ import { Transform } from 'node:stream';
 import { basename, extname, join, resolve } from 'node:path';
 import { networkInterfaces } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const dataRoot = resolve(here, 'data');
@@ -153,6 +154,62 @@ async function readJsonBody(req, limit) {
 const STALL_MINUTES = Number(process.env.VIDEOQUIZ_STALL_MINUTES || 45);
 /** 刚派发的前几分钟允许会话启动，不判死。 */
 const STARTUP_GRACE_MINUTES = 3;
+
+/** 常驻 OCR 服务：模型只加载一次、CUDA 只预热一次，省掉每次 50 秒冷启动。 */
+const ocrServerUrl = process.env.VIDEOQUIZ_OCR_SERVER || 'http://127.0.0.1:8766';
+let ocrChild = null;
+
+async function ocrServerReady(timeoutMs = 3000) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const response = await fetch(`${ocrServerUrl}/health`, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!response.ok) return false;
+    const data = await response.json();
+    return data?.ready === true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureOcrServer() {
+  if (await ocrServerReady()) {
+    console.log(`ocr: 复用已有服务 ${ocrServerUrl}`);
+    return;
+  }
+
+  const script = join(here, 'ocr_server.py');
+  if (!existsSync(script)) {
+    console.log('ocr: 缺少 ocr_server.py，跳过');
+    return;
+  }
+
+  try {
+    ocrChild = spawn(process.env.VIDEOQUIZ_PYTHON || 'python', [script, '--port', '8766', '--cuda', 'auto'], {
+      cwd: here,
+      // detached：OCR 服务独立于桥接，桥接重启不会连带杀掉它，50 秒预热只付一次
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    ocrChild.on('error', (error) => console.log(`ocr: 启动失败 ${error.message}`));
+    ocrChild.unref();
+    console.log('ocr: 正在启动常驻服务（首次要预热约 50 秒，期间会自动回退 CPU）');
+
+    // 后台等它就绪，不阻塞桥接启动
+    for (let i = 0; i < 40; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      if (await ocrServerReady()) {
+        console.log(`ocr: 服务就绪 ${ocrServerUrl}`);
+        return;
+      }
+    }
+    console.log('ocr: 等待超时，会话会回退到本地模型');
+  } catch (error) {
+    console.log(`ocr: 启动异常 ${error.message}`);
+  }
+}
 
 /** Jev（typesafeai）判定层：只做选择题选答案，不给过程。配置在 data/jev.json。 */
 const jevConfigPath = join(dataRoot, 'jev.json');
@@ -1106,6 +1163,7 @@ server.keepAliveTimeout = 5_000;
 // 双栈：监听 '::' 时 Node 默认 ipv6Only=false，IPv4 连接会以映射地址进来。
 const listenArgs = bindHost === '0.0.0.0' ? [] : [bindHost];
 server.listen(port, ...listenArgs, () => {
+  ensureOcrServer().catch((error) => console.log(`ocr: ${error.message}`));
   console.log(`VideoQuiz bridge listening on ${bindHost === '0.0.0.0' ? '0.0.0.0 + ::' : bindHost}:${port}`);
   for (const [name, entries] of Object.entries(networkInterfaces())) {
     for (const entry of entries || []) {

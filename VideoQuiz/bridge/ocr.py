@@ -76,6 +76,7 @@ def main():
     ap.add_argument("--out", default="")
     ap.add_argument("--cuda", default="auto", choices=["auto", "on", "off"])
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--server", default="", help="常驻 OCR 服务地址；off 表示只用本地模型")
     args = ap.parse_args()
 
     logging.disable(logging.WARNING)
@@ -86,6 +87,35 @@ def main():
         return 1
     if args.limit > 0:
         files = files[: args.limit]
+
+    # 优先用常驻服务：它已经预热过，没有 50 秒冷启动成本
+    server = args.server or os.environ.get("VIDEOQUIZ_OCR_SERVER", "http://127.0.0.1:8766")
+    if args.server != "off" and server and server != "off":
+        try:
+            import json as _json
+            import urllib.request as _url
+            req = _url.Request(
+                server.rstrip("/") + "/ocr",
+                data=_json.dumps({"paths": files}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with _url.urlopen(req, timeout=1800) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+            if data.get("ok"):
+                data["source"] = "server"
+                out_path = args.out or os.path.join(
+                    args.target if os.path.isdir(args.target) else os.path.dirname(args.target), "ocr.json")
+                with open(out_path, "w", encoding="utf-8") as handle:
+                    _json.dump(data, handle, ensure_ascii=False, indent=1)
+                print(_json.dumps({
+                    "engine": data.get("engine"), "files": data.get("files"),
+                    "elapsed_s": data.get("elapsed_s"), "ms_per_frame": data.get("ms_per_frame"),
+                    "out": out_path, "source": "server",
+                }, ensure_ascii=False))
+                return 0
+        except Exception as exc:
+            print(f"常驻服务不可用（{type(exc).__name__}），回退到本地模型", file=sys.stderr)
 
     # 帧太少时 CUDA 的 50 秒初始化不划算（CPU 约 2.4 秒/帧，40 帧才追平）
     want_cuda = args.cuda != "off"
