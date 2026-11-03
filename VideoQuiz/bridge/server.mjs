@@ -8,6 +8,7 @@ import { basename, extname, join, resolve } from 'node:path';
 import { networkInterfaces } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { UnitQueue, hashContent } from './units.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const dataRoot = resolve(here, 'data');
@@ -22,6 +23,51 @@ const targetSessionId = process.env.VIDEOQUIZ_TARGET_SESSION_ID || 'session-3b1e
 // 回传地址给的是电脑上的 Harness 会话，走回环最稳，也不受网卡变化影响。
 const completionUrl = `http://127.0.0.1:${port}`;
 mkdirSync(jobsRoot, { recursive: true });
+
+// ── 分段/分张流水：unit 队列（与老 job 协议并行，互不影响）──
+const unitsRoot = join(dataRoot, 'units');
+mkdirSync(unitsRoot, { recursive: true });
+
+function unitFilePath(unit) {
+  return join(unitsRoot, unit.hash, unit.name);
+}
+
+async function dispatchUnit(unit) {
+  const session = (unit.meta && typeof unit.meta.sessionId === 'string' && unit.meta.sessionId) || targetSessionId;
+  const answerPath = join(unitsRoot, unit.hash, 'answer.json');
+  const prompt = [
+    '【分段任务 · 单个 unit】',
+    `unit 类型：${unit.kind === 'image' ? '单张图片' : '一段视频'}`,
+    `文件：${unitFilePath(unit)}`,
+    `unit 标识：${unit.hash}`,
+    '',
+    '只处理这一个 unit：不要等后面的 unit，也不要去读别的 unit 的文件；',
+    '用户之后会继续发下一张 / 下一段，每段独立出结果。',
+    unit.kind === 'image'
+      ? '识别这张图片里的题目并作答。'
+      : '只处理这一段视频（不要去找“完整视频”）：抽帧 → 识别题 → 作答。',
+    '',
+    '完成后把结果写成 JSON 到：' + answerPath,
+    '格式：{"answer":"不超过 80 字的答案摘要","items":[{"id":"21","answer":"A","type":"choice"}],"notes":"不确定的地方"}',
+    '写完就结束，不要额外回长文。',
+  ].join('\n');
+
+  const outcome = await supervisorCommand({ op: 'send', sessionId: session, text: prompt });
+  if (outcome.status !== 200 || outcome.body?.ok !== true) {
+    throw new Error(outcome.body?.message || outcome.body?.code || `command HTTP ${outcome.status}`);
+  }
+}
+
+const unitQueue = new UnitQueue({
+  root: unitsRoot,
+  dispatch: dispatchUnit,
+  collectResult: (unit) => {
+    const path = join(unitsRoot, unit.hash, 'answer.json');
+    if (!existsSync(path)) return null;
+    try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
+  },
+});
+
 
 let token = process.env.VIDEOQUIZ_BRIDGE_TOKEN;
 if (!token && existsSync(tokenPath)) token = readFileSync(tokenPath, 'utf8').trim();
@@ -479,8 +525,10 @@ async function sendToSession(id, job, options = {}) {
       `  a) 先把视频切页、定位出「不同页面」，每页截一张整页图存进 work/，之后就只读这些整页图；`,
       `  b) 每页最多读 1 次。切页完成后把原始帧图删掉，避免不自觉地回去逐帧核对——那是最费钱的坏习惯；`,
       `  c) 读图前把长边缩到 1000 像素。桥接目录已经备好缩放脚本，直接跑：python "${join(here, 'shrink.py')}" <图片目录> 1000 —— 它会生成 _small/ 子目录（实测 1920×1080 缩到 1000×562，体积省 77%，文字公式依然清晰）。读 _small/ 里的图，不要读原图；`,
-      `  d) OCR 直接调桥接目录的现成脚本，别自己拼：python "${join(here, 'ocr.py')}" <图片目录> --out <结果.json>。它会自动启用 CUDA（你的机器有 N 卡，实测从 2.4 秒/帧降到 0.4 秒/帧，快 6 倍）、自动预热、自动回落 CPU，并输出结构化的行文本+坐标+置信度。只有 OCR 置信度低或版式不明的段落才读图核对；`,
-      `  e) 拿不准的段落用 OCR 文本 + 相邻页交叉验证，不要靠重复读图。`,
+      `  d) OCR 直接调桥接目录的现成脚本：python "${join(here, 'ocr.py')}" <图片目录> --out <结果.json>。它优先走常驻服务（http://127.0.0.1:8766，约 100~400ms/帧），服务不可用时自动回退本地加载。`,
+      `  e) **不要自己启停 OCR 服务**。它是桥接拉起的独立进程，桥接会维护它；你去 kill 或重启只会让 CUDA 重新预热 50 秒。只需请求 /health 看 ready 和 busy 两个字段：busy=true 表示正在处理，等它就好，不要误判成卡死。`,
+      `  f) **全帧 OCR 是最后手段，不是默认**。去重阶段已经覆盖了整卷内容时，就只 OCR 去重后的页面；只有在"去重后仍发现缺号、需要回补"或"重影严重需要多帧投票"时，才对缺失区间做补扫。整段视频全帧重扫一遍通常是浪费。`,
+      `  g) 拿不准的段落用 OCR 文本 + 相邻页交叉验证，不要靠重复读图。`,
       `量化目标（45 题规模的卷子）：读图不超过 8 次、读题阶段 60 秒内完成、总 token 控制在 5 万以内。做不到就在结果摘要里说明卡在哪。`,
       `第 1 步（只读题，先别解题）：读视频里的每一道题，把题干和选项结构化写进 ${resultsPath}\\questions.json，格式严格如下：`,
       `{"questions":[{"id":"21","type":"choice","stem":"题干原文","options":{"A":"选项A原文","B":"选项B原文","C":"选项C原文","D":"选项D原文"},"needsFigure":false,"incomplete":false},{"id":"36","type":"blank","stem":"题干原文","options":null}]}`,
@@ -525,6 +573,80 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { ok: true, service: 'videoquiz-bridge', maxBytes });
     }
     if (!auth(req)) return json(res, 401, { error: 'unauthorized' });
+
+    // ── 分段/分张流水（unit 队列）────────────────────────────────
+    // 一张图 / 一段视频 = 一个 unit；逐段入队、逐段出结果、可断点续跑、内容 hash 去重。
+    if (req.method === 'POST' && url.pathname === '/api/units') {
+      const length = Number(req.headers['content-length']);
+      if (!Number.isSafeInteger(length) || length <= 0) {
+        return json(res, 411, { ok: false, code: 'LENGTH_REQUIRED', message: '需要 Content-Length' });
+      }
+      if (length > maxBytes) return json(res, 413, { ok: false, code: 'TOO_LARGE' });
+
+      const kindRaw = String(req.headers['x-unit-kind'] || 'image').toLowerCase();
+      const kind = kindRaw === 'video' || kindRaw === 'video-segment' ? 'video-segment' : 'image';
+      const rawName = req.headers['x-unit-name-b64']
+        ? Buffer.from(String(req.headers['x-unit-name-b64']), 'base64').toString('utf8')
+        : String(req.headers['x-unit-name'] || (kind === 'image' ? 'unit.png' : 'segment.mp4'));
+      const name = basename(rawName.replaceAll('\\', '/')).replace(/[^\p{L}\p{N}._() -]/gu, '_').slice(0, 120)
+        || (kind === 'image' ? 'unit.png' : 'segment.mp4');
+      const session = String(req.headers['x-unit-session-b64']
+        ? Buffer.from(String(req.headers['x-unit-session-b64']), 'base64').toString('utf8')
+        : (req.headers['x-unit-session'] || '')).trim();
+
+      const chunks = [];
+      let received = 0;
+      try {
+        for await (const chunk of req) {
+          received += chunk.length;
+          if (received > maxBytes) return json(res, 413, { ok: false, code: 'TOO_LARGE' });
+          chunks.push(chunk);
+        }
+      } catch (error) {
+        return json(res, 400, { ok: false, code: 'UPLOAD_FAILED', message: error.message });
+      }
+      const body = Buffer.concat(chunks);
+      const hash = hashContent(body);
+      const result = unitQueue.enqueue({ hash, kind, name, size: body.length, meta: session === '' ? {} : { sessionId: session } });
+
+      if (!result.duplicate) {
+        writeFileSync(unitFilePath(result.unit), body);
+      }
+      // 立即开跑（不阻塞响应）：这就是"每来一张就先出这张的答案"
+      setImmediate(() => { unitQueue.process(hash).catch(() => {}); });
+
+      return json(res, result.duplicate ? 200 : 202, {
+        ok: true,
+        hash,
+        kind,
+        name,
+        duplicate: result.duplicate,
+        status: unitQueue.get(hash)?.status ?? 'pending',
+        resultUrl: `/api/units/${hash}`,
+      });
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/units') {
+      const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 50), 1), 200);
+      return json(res, 200, {
+        ok: true,
+        summary: unitQueue.summarize(),
+        units: unitQueue.list().slice(-limit),
+      });
+    }
+
+    const unitMatch = url.pathname.match(/^\/api\/units\/([0-9a-f]{64})$/i);
+    if (req.method === 'GET' && unitMatch) {
+      const unit = unitQueue.get(unitMatch[1]);
+      if (!unit) return json(res, 404, { ok: false, code: 'UNIT_NOT_FOUND' });
+      const answerPath = join(unitsRoot, unit.hash, 'answer.json');
+      let answer = null;
+      if (existsSync(answerPath)) {
+        try { answer = JSON.parse(readFileSync(answerPath, 'utf8')); } catch { answer = null; }
+      }
+      return json(res, 200, { ok: true, unit, answer });
+    }
+
 
     // ── 会话控制：列会话 / 新建会话 / 往指定会话投递 ──
     if (req.method === 'GET' && url.pathname === '/api/sessions') {
@@ -1170,6 +1292,10 @@ server.keepAliveTimeout = 5_000;
 const listenArgs = bindHost === '0.0.0.0' ? [] : [bindHost];
 server.listen(port, ...listenArgs, () => {
   ensureOcrServer().catch((error) => console.log(`ocr: ${error.message}`));
+  // 断点续跑：把上次中断时没跑完的 unit 捡起来
+  unitQueue.resumeAll().then((n) => {
+    if (n > 0) console.log(`units: 续跑 ${n} 个未完成 unit`);
+  }).catch((error) => console.log(`units resume: ${error.message}`));
   console.log(`VideoQuiz bridge listening on ${bindHost === '0.0.0.0' ? '0.0.0.0 + ::' : bindHost}:${port}`);
   for (const [name, entries] of Object.entries(networkInterfaces())) {
     for (const entry of entries || []) {
