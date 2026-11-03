@@ -406,9 +406,10 @@ async function sendToSession(id, job, options = {}) {
       `任务要求：${job.task}`,
       `进度上报（重要）：每完成一个阶段，运行 task.ps1：Operation=progress、BaseUrl=${completionUrl}、Id=${id}、Text="一句话说明现在做到哪一步"，例如「已抽帧 32 张」「读到第 18 题」「正在排版 PDF」。手机端会实时显示这句话，用户据此判断你还在干活。整卷任务建议每 2-3 分钟至少上报一次。`,
       `第一步（只读题，先别解题）：读视频里的每一道题，把题干和选项结构化写进 ${resultsPath}\\questions.json，格式严格如下：`,
-      `{"questions":[{"id":"21","type":"choice","stem":"题干原文","options":{"A":"选项A原文","B":"..."}},{"id":"36","type":"blank","stem":"题干原文","options":null}]}`,
+      `{"questions":[{"id":"21","type":"choice","stem":"题干原文","options":{"A":"选项A原文","B":"..."},"needsFigure":false},{"id":"36","type":"blank","stem":"题干原文","options":null}]}`,
       `要点：type 取 choice（有选项的选择题）/ blank（填空）/ essay（解答、作文）；只有 choice 要填 options；题干保留题号、公式、原文，不要改写或翻译。`,
-      `第二步：运行 task.ps1：Operation=ask-jev、BaseUrl=${completionUrl}、Id=${id}。它会把 questions.json 里的选择题交给一个专用判定模型批量作答，返回 decided（高置信答案）和 unresolved（拿不准的题号）。`,
+      `关键（决定外包能不能用）：如果题目依赖配套材料——阅读理解的原文段落、资料分析的统计表格、完形填空的整段短文——必须把材料文本一并写进 stem，用「材料：」开头，然后才是问题。材料是表格就转成「列名: 值」的纯文本行。只写问题不写材料，判定模型会直接判不了。`,
+      `needsFigure：题目依赖图形、图片、示意图（图形推理、几何配图、图表拿不到数据）时置 true；这类题跳过外包，由你自己解。`,
       `第三步：decided 里的题直接采用它的答案，不要重新推理；unresolved 里的题由你自己认真解。blank 和 essay 类型的题也必须你自己解。如果 ask-jev 报错（比如没配置判定模型），就把所有题都自己解，不要卡住。`,
       `第四步：把所有题（外包得到的 + 你自己解的）合并，在结果目录写 answers.pdf（完整版，题目+答案）、answers_only.pdf（速查版，只列题号与答案）和 answers.txt；然后运行 task.ps1：Operation=complete、BaseUrl=${completionUrl}、Id=${id}、Text=结果摘要、FilesJson='[{"name":"answers.pdf","mimeType":"application/pdf"},{"name":"answers_only.pdf","mimeType":"application/pdf"},{"name":"answers.txt","mimeType":"text/plain"}]'。脚本自行读取本机 token.txt，禁止读取/展示/写入对话。不要改写视频源文件。`,
     ].join('\n');
@@ -716,9 +717,20 @@ const server = createServer(async (req, res) => {
       }
 
       const all = Array.isArray(parsed?.questions) ? parsed.questions : [];
-      // 只判选择题：有 options 且至少 2 个选项
-      const choiceable = all.filter((q) => q && typeof q.id === 'string' && q.options && Object.keys(q.options).length >= 2);
+      // 只判「纯文本可判」的选择题：
+      // - 必须有 options（至少 2 个）
+      // - 标了 needsFigure 的跳过（图形题看不到图，判了也是瞎猜）
+      // - 题干太短（多半是缺材料）也跳过
+      const choiceable = all.filter((q) => {
+        if (q === null || typeof q !== "object") return false;
+        if (typeof q.id !== "string") return false;
+        if (q.needsFigure === true) return false;
+        if (!q.options || Object.keys(q.options).length < 2) return false;
+        const stem = typeof q.stem === "string" ? q.stem.trim() : "";
+        return stem.length >= 12;
+      });
 
+      const skippedFigure = all.filter((q) => q !== null && typeof q === "object" && q.needsFigure === true).length;
       if (choiceable.length === 0) {
         return json(res, 200, { ok: true, id, judged: 0, message: '没有可判定的选择题' });
       }
@@ -750,6 +762,7 @@ const server = createServer(async (req, res) => {
         judged: choiceable.length,
         decided: decided.length,
         needHelp: needHelp.length,
+        ...(skippedFigure > 0 ? { skippedFigure } : {}),
         answered: decided,
         unresolved: needHelp,
         elapsedMs: Date.now() - started,
