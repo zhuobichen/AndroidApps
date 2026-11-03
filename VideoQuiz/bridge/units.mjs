@@ -21,6 +21,24 @@ export const UNIT_RUNNING = 'running';
 export const UNIT_DONE = 'done';
 export const UNIT_FAILED = 'failed';
 
+/**
+ * 三种识别模式（同一套 unit 核心，只有「何时触发处理」不同）：
+ *   batch   —— 收齐一批再跑，全量跑完统一出结果（默认，兼容老行为）
+ *   single  —— 一次一张，到货即处理，出完这张立刻可读结果
+ *   video   —— 一段一段，到货即处理，按到达顺序串行（保证时间线不乱）
+ */
+export const MODES = ['batch', 'single', 'video'];
+export const DEFAULT_MODE = 'batch';
+
+export function normalizeMode(value, fallback = DEFAULT_MODE) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (MODES.includes(raw)) return raw;
+  if (raw === 'incremental' || raw === 'incremental-single' || raw === 'shot') return 'single';
+  if (raw === 'incremental-video' || raw === 'segment') return 'video';
+  return fallback;
+}
+
+
 /** 内容 hash：同一段内容无论传几次都是同一个 unit */
 export function hashContent(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
@@ -41,29 +59,46 @@ export class UnitQueue {
    * @param {(unit: object) => boolean} [options.isFinished]    可选：判断 unit 是否已产出结果
    * @param {(unit: object) => object|null} [options.collectResult] 可选：收集该 unit 的答案
    */
-  constructor({ root, dispatch, isFinished, collectResult }) {
+  constructor({ root, dispatch, isFinished, collectResult, mode }) {
     this.root = root;
     this.dispatch = dispatch;
     this.isFinished = isFinished ?? (() => false);
     this.collectResult = collectResult ?? (() => null);
     this.statePath = join(root, 'units.json');
+    this.initialMode = mode === undefined ? undefined : normalizeMode(mode);
     this.state = this.#load();
     this.running = new Set();
   }
 
+  /** 当前模式（持久化在 units.json 里，跨重启保留） */
+  getMode() {
+    return normalizeMode(this.state.mode, DEFAULT_MODE);
+  }
+
+  /** 显式切换模式；只影响「何时处理」，不影响已入队 unit 与 hash 幂等 */
+  setMode(mode) {
+    const next = normalizeMode(mode, this.getMode());
+    if (next !== this.state.mode) {
+      this.state.mode = next;
+      this.save();
+    }
+    return this.state.mode;
+  }
+
+
   #load() {
     if (!existsSync(this.root)) mkdirSync(this.root, { recursive: true });
-    if (!existsSync(this.statePath)) return { version: 1, units: {} };
+    if (!existsSync(this.statePath)) return { version: 1, mode: this.initialMode ?? DEFAULT_MODE, units: {} };
     try {
       const parsed = JSON.parse(readFileSync(this.statePath, 'utf8'));
       if (!parsed || typeof parsed !== 'object' || typeof parsed.units !== 'object' || parsed.units === null) {
-        return { version: 1, units: {} };
+        return { version: 1, mode: this.initialMode ?? DEFAULT_MODE, units: {} };
       }
-      return parsed;
+      return { ...parsed, mode: normalizeMode(parsed.mode, this.initialMode ?? DEFAULT_MODE) };
     } catch {
       // 状态损坏时不要整个队列瘫痪：留个备份，从空队列继续
       try { renameSync(this.statePath, `${this.statePath}.corrupt-${Date.now()}`); } catch {}
-      return { version: 1, units: {} };
+      return { version: 1, mode: this.initialMode ?? DEFAULT_MODE, units: {} };
     }
   }
 
@@ -80,7 +115,7 @@ export class UnitQueue {
    * 入队（幂等）。
    * @returns {{unit: object, duplicate: boolean}}
    */
-  enqueue({ hash, kind, name, size = 0, meta = {} }) {
+  enqueue({ hash, kind, name, size = 0, meta = {}, mode }) {
     const existing = this.state.units[hash];
     if (existing) {
       return { unit: existing, duplicate: true };
@@ -88,6 +123,7 @@ export class UnitQueue {
     const unit = {
       hash,
       kind,                        // 'image' | 'video-segment'
+      mode: normalizeMode(mode ?? this.getMode(), DEFAULT_MODE),
       name,
       size,
       status: UNIT_PENDING,
@@ -179,10 +215,49 @@ export class UnitQueue {
     return pending.length;
   }
 
+  /** 下一个待跑 unit（按入队顺序，video 模式的串行也靠它） */
+  nextPending() {
+    return this.list().find((u) => u.status === UNIT_PENDING) ?? null;
+  }
+
+  /**
+   * 跑下一个待处理 unit（single / video 模式用：到货即处理）。
+   * @returns {Promise<object|null>} 处理过的 unit，没有则 null
+   */
+  async processNext() {
+    const unit = this.nextPending();
+    if (!unit) return null;
+    return this.process(unit.hash);
+  }
+
+  /**
+   * 批量模式：把当前所有 pending 一次跑完（batch 模式用：收齐再跑）。
+   * @returns {Promise<number>} 处理数量
+   */
+  async flush({ concurrency = 2 } = {}) {
+    const pending = this.list().filter((u) => u.status === UNIT_PENDING).map((u) => u.hash);
+    if (pending.length === 0) return 0;
+
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < pending.length) {
+        const hash = pending[cursor++];
+        try { await this.process(hash); } catch { /* 单个失败不影响其它 */ }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, pending.length) }, worker));
+    return pending.length;
+  }
+
   summarize() {
     const all = this.list();
     const by = { pending: 0, running: 0, done: 0, failed: 0 };
-    for (const u of all) by[u.status] = (by[u.status] ?? 0) + 1;
-    return { total: all.length, ...by };
+    const byMode = { batch: 0, single: 0, video: 0 };
+    for (const u of all) {
+      by[u.status] = (by[u.status] ?? 0) + 1;
+      const m = normalizeMode(u.mode, DEFAULT_MODE);
+      byMode[m] = (byMode[m] ?? 0) + 1;
+    }
+    return { total: all.length, mode: this.getMode(), byMode, ...by };
   }
 }

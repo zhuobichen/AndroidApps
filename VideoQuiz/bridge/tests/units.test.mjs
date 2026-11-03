@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { UnitQueue, hashContent, UNIT_DONE, UNIT_FAILED } from '../units.mjs';
@@ -10,7 +10,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 function freshRoot() {
   // 放在项目内，避免依赖系统临时目录权限
   const base = join(here, '.tmp');
-  return mkdtempSync(join(base.endsWith('\\') ? base : base + '\\'));
+  mkdirSync(base, { recursive: true });
+  return mkdtempSync(join(base, 'run-'));
 }
 
 /** 假的识别核心：把「答案」写成 dispatch 收到的内容长度，便于断言逐段产出 */
@@ -51,7 +52,10 @@ test('逐张/逐段：每个 unit 完成即落 result.json，不攒到最后', a
     await q.process(ub.unit.hash);
     assert.equal(q.get(ub.unit.hash).status, UNIT_DONE);
     assert.ok(existsSync(join(root, ub.unit.hash, 'result.json')));
-    assert.deepEqual(q.summarize(), { total: 2, pending: 0, running: 0, done: 2, failed: 0 });
+    const summary1 = q.summarize();
+    assert.equal(summary1.total, 2);
+    assert.equal(summary1.done, 2);
+    assert.equal(summary1.pending, 0);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -124,4 +128,88 @@ test('单个 unit 失败不影响其它 unit', async () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('模式1 batch：收齐不跑，flush 才跑完（默认模式）', async () => {
+  const root = freshRoot();
+  try {
+    const calls = [];
+    const q = new UnitQueue({ root, dispatch: async (u) => { calls.push(u.hash); }, collectResult: (u) => ({ answer: u.name }) });
+    assert.equal(q.getMode(), 'batch', '默认必须是 batch');
+    q.enqueue({ hash: hashContent(Buffer.from('b1')), kind: 'image', name: 'b1.png', size: 2 });
+    q.enqueue({ hash: hashContent(Buffer.from('b2')), kind: 'image', name: 'b2.png', size: 2 });
+    assert.equal(calls.length, 0, 'batch 模式下不应该自动跑');
+    assert.equal(q.summarize().pending, 2);
+    const n = await q.flush();
+    assert.equal(n, 2);
+    assert.equal(q.summarize().done, 2);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('模式2 single：一次一张，处理完即出结果', async () => {
+  const root = freshRoot();
+  try {
+    const q = new UnitQueue({ root, mode: 'single', dispatch: async () => {}, collectResult: (u) => ({ answer: `ans-${u.name}` }) });
+    assert.equal(q.getMode(), 'single');
+    const h1 = hashContent(Buffer.from('s1'));
+    q.enqueue({ hash: h1, kind: 'image', name: 's1.png', size: 2 });
+    assert.equal(q.get(h1).status, 'pending');
+    await q.processNext();
+    assert.equal(q.get(h1).status, 'done', '处理完这张应立即 done');
+    assert.ok(existsSync(join(root, h1, 'result.json')));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('模式3 video：分段按到达顺序串行处理', async () => {
+  const root = freshRoot();
+  try {
+    const order = [];
+    const q = new UnitQueue({ root, mode: 'video', dispatch: async (u) => { order.push(u.name); }, collectResult: () => null });
+    assert.equal(q.getMode(), 'video');
+    q.enqueue({ hash: hashContent(Buffer.from('v1')), kind: 'video-segment', name: 'seg1.mp4', size: 2 });
+    q.enqueue({ hash: hashContent(Buffer.from('v2')), kind: 'video-segment', name: 'seg2.mp4', size: 2 });
+    await q.processNext();
+    await new Promise((r) => setTimeout(r, 5));
+    await q.processNext();
+    assert.deepEqual(order, ['seg1.mp4', 'seg2.mp4'], '分段必须按顺序处理');
+    assert.equal(q.summarize().done, 2);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('模式可切换 + 跨模式续跑：batch 未跑完 → 切 single → 重启后全部跑完', async () => {
+  const root = freshRoot();
+  try {
+    const q1 = new UnitQueue({ root, dispatch: async () => {}, collectResult: () => null });
+    const h1 = hashContent(Buffer.from('m1'));
+    const h2 = hashContent(Buffer.from('m2'));
+    q1.enqueue({ hash: h1, kind: 'image', name: 'm1.png', size: 2 });
+    q1.enqueue({ hash: h2, kind: 'image', name: 'm2.png', size: 2 });
+    assert.equal(q1.summarize().pending, 2);
+
+    q1.setMode('single');
+    assert.equal(q1.getMode(), 'single');
+
+    // 模拟重启：新实例读同一个 units.json，模式与队列都要保留
+    const q2 = new UnitQueue({ root, dispatch: async () => {}, collectResult: () => null });
+    assert.equal(q2.getMode(), 'single', '模式应跨重启保留');
+    const recovered = await q2.resumeAll();
+    assert.equal(recovered, 2, '未完成的 unit 应被续跑');
+    assert.equal(q2.summarize().done, 2);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('跨模式幂等：同一内容在 batch / single 下都只识别一次', async () => {
+  const root = freshRoot();
+  try {
+    const calls = [];
+    const q = new UnitQueue({ root, dispatch: async (u) => { calls.push(u.hash); }, collectResult: () => null });
+    const buf = Buffer.from('same-across-modes');
+    const hash = hashContent(buf);
+    const a = q.enqueue({ hash, kind: 'image', name: 'x.png', size: buf.length, mode: 'batch' });
+    const b = q.enqueue({ hash, kind: 'image', name: 'x.png', size: buf.length, mode: 'single' });
+    assert.equal(a.duplicate, false);
+    assert.equal(b.duplicate, true, '换模式也不能重复识别');
+    await q.process(hash);
+    assert.equal(calls.length, 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

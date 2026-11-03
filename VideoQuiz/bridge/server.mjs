@@ -8,7 +8,7 @@ import { basename, extname, join, resolve } from 'node:path';
 import { networkInterfaces } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { UnitQueue, hashContent } from './units.mjs';
+import { UnitQueue, hashContent, normalizeMode, MODES, DEFAULT_MODE } from './units.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const dataRoot = resolve(here, 'data');
@@ -60,6 +60,8 @@ async function dispatchUnit(unit) {
 
 const unitQueue = new UnitQueue({
   root: unitsRoot,
+  // 模式优先级：请求入参 > 环境变量 > units.json 持久化值 > 默认 batch
+  mode: process.env.VIDEOQUIZ_MODE || DEFAULT_MODE,
   dispatch: dispatchUnit,
   collectResult: (unit) => {
     const path = join(unitsRoot, unit.hash, 'answer.json');
@@ -607,23 +609,57 @@ const server = createServer(async (req, res) => {
       }
       const body = Buffer.concat(chunks);
       const hash = hashContent(body);
-      const result = unitQueue.enqueue({ hash, kind, name, size: body.length, meta: session === '' ? {} : { sessionId: session } });
+      // 模式优先级：请求入参(?mode= / X-Unit-Mode) > 环境变量 > 持久化值 > batch
+      const mode = normalizeMode(
+        req.headers['x-unit-mode'] || url.searchParams.get('mode') || '',
+        unitQueue.getMode(),
+      );
+      const result = unitQueue.enqueue({ hash, kind, name, size: body.length, mode, meta: session === '' ? {} : { sessionId: session } });
 
       if (!result.duplicate) {
         writeFileSync(unitFilePath(result.unit), body);
       }
-      // 立即开跑（不阻塞响应）：这就是"每来一张就先出这张的答案"
-      setImmediate(() => { unitQueue.process(hash).catch(() => {}); });
+      // 三种模式的分岔只在这里：single/video 到货即处理，batch 等显式 flush
+      if (mode !== 'batch') {
+        setImmediate(() => { unitQueue.process(hash).catch(() => {}); });
+      }
 
       return json(res, result.duplicate ? 200 : 202, {
         ok: true,
         hash,
         kind,
+        mode,
         name,
         duplicate: result.duplicate,
         status: unitQueue.get(hash)?.status ?? 'pending',
         resultUrl: `/api/units/${hash}`,
       });
+    }
+
+    // 批量模式：收齐后一次性跑完（也可以带 ?mode= 临时切到 batch 再 flush）
+    if (req.method === 'POST' && url.pathname === '/api/units/flush') {
+      const flushMode = normalizeMode(url.searchParams.get('mode') || '', unitQueue.getMode());
+      const done = await unitQueue.flush();
+      return json(res, 200, { ok: true, mode: flushMode, processed: done, summary: unitQueue.summarize() });
+    }
+
+    // 模式查询 / 切换（持久化到 units.json，跨重启保留）
+    if (req.method === 'GET' && url.pathname === '/api/mode') {
+      return json(res, 200, { ok: true, mode: unitQueue.getMode(), modes: MODES, summary: unitQueue.summarize() });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/mode') {
+      let payload;
+      try {
+        payload = await readJsonBody(req, 4 * 1024);
+      } catch (error) {
+        return json(res, 400, { ok: false, code: 'BAD_JSON', message: error.message });
+      }
+      const raw = typeof payload?.mode === 'string' ? payload.mode : url.searchParams.get('mode') || '';
+      if (raw === '' || !MODES.includes(normalizeMode(raw, ''))) {
+        return json(res, 400, { ok: false, code: 'BAD_MODE', modes: MODES });
+      }
+      const next = unitQueue.setMode(raw);
+      return json(res, 200, { ok: true, mode: next, modes: MODES });
     }
 
     if (req.method === 'GET' && url.pathname === '/api/units') {
