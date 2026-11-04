@@ -16,6 +16,7 @@ import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.FileProvider;
 import androidx.activity.result.contract.ActivityResultContracts;
 
 import org.json.JSONArray;
@@ -68,6 +69,32 @@ public class PaperActivity extends AppCompatActivity {
                 uploadPicked(uri);
             });
 
+    /** 系统相机拍的原图，拍完直接当成这一套卷的一张照片上传 */
+    private File pendingShotFile;
+    private Uri pendingShotUri;
+
+    private final ActivityResultLauncher<Intent> shotLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+                File shot = pendingShotFile;
+                pendingShotFile = null;
+                pendingShotUri = null;
+                if (result.getResultCode() != RESULT_OK || shot == null || !shot.isFile()) return;
+                if (shot.length() < 20 * 1024) {
+                    toast("这张照片异常小（" + (shot.length() / 1024) + "KB），可能相机没写原图，重拍一次");
+                    return;
+                }
+                String name = shot.getName();
+                uploading = true;
+                tvSummary.setText("正在上传 " + name + "…");
+                pool.execute(() -> {
+                    try {
+                        doUpload(shot, name, "image");
+                    } finally {
+                        shot.delete();
+                    }
+                });
+            });
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -80,6 +107,7 @@ public class PaperActivity extends AppCompatActivity {
         scroll = findViewById(R.id.scroll);
 
         findViewById(R.id.toolbar).setOnClickListener(v -> finish());
+        findViewById(R.id.btnTakePhoto).setOnClickListener(v -> takePhoto());
         findViewById(R.id.btnAddVideo).setOnClickListener(v -> picker.launch(new String[]{"video/*"}));
         findViewById(R.id.btnAddPhoto).setOnClickListener(v -> picker.launch(new String[]{"image/*"}));
         findViewById(R.id.btnNewPaper).setOnClickListener(v -> startNewPaper());
@@ -124,14 +152,7 @@ public class PaperActivity extends AppCompatActivity {
     // ── 上传一段/一张 ─────────────────────────────────────────────
 
     private void uploadPicked(Uri uri) {
-        if (uploading) {
-            toast("上一段还在上传，等它传完");
-            return;
-        }
-        if (!prefs.bridgeMode() || prefs.bridgeUrl().isEmpty()) {
-            toast("先在设置里切到「电脑 Harness」并填好地址");
-            return;
-        }
+        if (!canUpload()) return;
 
         String name = displayName(uri);
         String kind = name.toLowerCase().matches(".*\\.(mp4|mov|m4v|mkv|webm|avi|3gp|mpeg|mpg)$")
@@ -144,25 +165,74 @@ public class PaperActivity extends AppCompatActivity {
             File staged = null;
             try {
                 staged = copyToCache(uri, name);
-                JSONObject result = uploadUnit(staged, name, kind);
-                final String hash = result.optString("hash", "");
-                final int seq = result.optInt("seq", 0);
-                ui.post(() -> {
-                    uploading = false;
-                    toast("第 " + seq + " 段已交给电脑，正在识别");
-                    lastRenderKey = "";
-                });
-                // 上传成功后立刻拉一次，让状态先出现
-                refreshNow();
+                doUpload(staged, name, kind);
             } catch (Throwable e) {
-                final String message = e.getMessage() == null ? e.toString() : e.getMessage();
-                ui.post(() -> {
-                    uploading = false;
-                    tvSummary.setText("上传失败：" + message);
-                });
+                failUpload(e);
             } finally {
                 if (staged != null) staged.delete();
             }
+        });
+    }
+
+    /** 打开系统相机，全尺寸原图写到 App 私有目录，不经过缩略图中转 */
+    private void takePhoto() {
+        if (!canUpload()) return;
+        try {
+            File dir = new File(getExternalFilesDir(null), "shots");
+            if (!dir.exists() && !dir.mkdirs()) throw new IllegalStateException("无法创建拍照目录");
+
+            pendingShotFile = new File(dir, "shot_" + System.currentTimeMillis() + ".jpg");
+            pendingShotUri = FileProvider.getUriForFile(this,
+                    getPackageName() + ".fileprovider", pendingShotFile);
+
+            Intent intent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+            intent.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, pendingShotUri);
+            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            if (intent.resolveActivity(getPackageManager()) == null) {
+                toast("这台手机没有可用的相机");
+                return;
+            }
+            shotLauncher.launch(intent);
+        } catch (Throwable e) {
+            pendingShotFile = null;
+            pendingShotUri = null;
+            toast("打开相机失败：" + (e.getMessage() == null ? e.toString() : e.getMessage()));
+        }
+    }
+
+    private boolean canUpload() {
+        if (uploading) {
+            toast("上一段还在上传，等它传完");
+            return false;
+        }
+        if (!prefs.bridgeMode() || prefs.bridgeUrl().isEmpty()) {
+            toast("先在设置里切到「电脑 Harness」并填好地址");
+            return false;
+        }
+        return true;
+    }
+
+    private void doUpload(File file, String name, String kind) {
+        try {
+            JSONObject result = uploadUnit(file, name, kind);
+            final int seq = result.optInt("seq", 0);
+            ui.post(() -> {
+                uploading = false;
+                toast("第 " + seq + " 段已交给电脑，正在识别");
+                lastRenderKey = "";
+            });
+            refreshNow();
+        } catch (Throwable e) {
+            failUpload(e);
+        }
+    }
+
+    private void failUpload(Throwable e) {
+        final String message = e.getMessage() == null ? e.toString() : e.getMessage();
+        ui.post(() -> {
+            uploading = false;
+            tvSummary.setText("上传失败：" + message);
         });
     }
 
