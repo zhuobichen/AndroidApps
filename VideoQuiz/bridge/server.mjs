@@ -88,7 +88,7 @@ async function dispatchUnit(unit) {
       ? `已出答案（${priorIds.length} 题）：\n${priorLines}`
       : '已出答案：暂无（这是这套卷的第 1 段）',
     '',
-    '完成后把结果写成 JSON 到：' + answerPath,
+    '完成后把结果写成 JSON 到：' + answerPath + '（先写 answer.json.tmp，写完整再改名成 answer.json——桥接靠文件是否稳定来判断你是否写完）',
     '格式：{"answer":"不超过 80 字的答案摘要","items":[{"id":"21","answer":"A","type":"choice"}],"notes":"不确定/修正的地方"}',
     'items 只放本次新解出的题；重复题号会被忽略。写完就结束，不要额外回长文。',
   ].join('\n');
@@ -106,11 +106,15 @@ const unitQueue = new UnitQueue({
   // 任务模式：整段 / 分段（文哥口径：区分模式，不区分会话）
   taskMode: process.env.VIDEOQUIZ_TASK_MODE || DEFAULT_TASK_MODE,
   dispatch: dispatchUnit,
-  // 会话是异步处理的：这里判断「结果真的写出来了」，process 才会标 done
+  // 会话是异步处理的，而且可能分多次写 answer.json（先简版后完整版）。
+  // 所以不能「文件一出现就算完成」——要等它稳定一段时间没再被改写，避免读到半成品。
   isFinished: (unit) => {
     const path = join(unitsRoot, unit.hash, 'answer.json');
     if (!existsSync(path)) return false;
     try {
+      const info = statSync(path);
+      const ageMs = Date.now() - info.mtimeMs;
+      if (ageMs < 4000) return false; // 刚写过，可能还要补第二次
       const parsed = JSON.parse(readFileSync(path, 'utf8'));
       return parsed !== null && typeof parsed === 'object';
     } catch {
