@@ -115,10 +115,10 @@ export class UnitQueue {
    * @param {(unit: object) => boolean} [options.isFinished]    可选：判断 unit 是否已产出结果
    * @param {(unit: object) => object|null} [options.collectResult] 可选：收集该 unit 的答案
    */
-  constructor({ root, dispatch, isFinished, collectResult, mode, taskMode }) {
+  constructor({ root, dispatch, isFinished, collectResult, mode, taskMode, resultTimeoutMs, pollIntervalMs }) {
     this.root = root;
     this.dispatch = dispatch;
-    this.isFinished = isFinished ?? (() => false);
+    this.isFinished = typeof isFinished === 'function' ? isFinished : null;
     this.collectResult = collectResult ?? (() => null);
     this.statePath = join(root, 'units.json');
     this.initialMode = mode === undefined ? undefined : normalizeMode(mode);
@@ -127,6 +127,12 @@ export class UnitQueue {
     this.running = new Set();
     /** 每个试卷一条串行链：同 paperId 的 unit 排队跑，不同 paperId 互不阻塞 */
     this.paperChains = new Map();
+    /**
+     * 派发只是把消息投进会话，会话是异步处理的——必须等它真的产出 answer.json
+     * 才能算 done，否则会出现「状态已完成、结果为空」，续跑时还会把没跑完的段跳过。
+     */
+    this.resultTimeoutMs = Number(resultTimeoutMs) > 0 ? Number(resultTimeoutMs) : 20 * 60 * 1000;
+    this.pollIntervalMs = Number(pollIntervalMs) > 0 ? Number(pollIntervalMs) : 2000;
   }
 
   /** 当前调度模式（batch / single / video） */
@@ -333,7 +339,22 @@ export class UnitQueue {
   }
 
   /**
-   * 跑一个 unit：置 running → dispatch → 收结果 → 写 result.json → 并入试卷 → 置 done。
+   * 等会话真正产出结果。
+   * dispatch 只是「投递消息」，会话异步处理，投递成功 ≠ 处理完成。
+   * 没传 isFinished 的调用方（例如单测）跳过等待，保持原有语义。
+   */
+  async waitForResult(unit) {
+    if (!this.isFinished) return true;
+    const deadline = Date.now() + this.resultTimeoutMs;
+    while (Date.now() < deadline) {
+      if (this.isFinished(unit)) return true;
+      await new Promise((resolve) => setTimeout(resolve, this.pollIntervalMs));
+    }
+    return false;
+  }
+
+  /**
+   * 跑一个 unit：置 running → dispatch → 等结果 → 收结果 → 写 result.json → 并入试卷 → 置 done。
    * 同一试卷内串行（runInPaper），单 paper 内的 unit 不会并发抢同一个会话上下文；
    * 单个 unit 失败不影响其它 unit。
    */
@@ -369,6 +390,13 @@ export class UnitQueue {
         };
 
         await this.dispatch(unit);
+
+        // 关键：投递成功 ≠ 处理完成。必须等会话真把 answer.json 写出来，
+        // 否则会把「还没算完」的段标成 done，续跑时直接跳过。
+        const ok = await this.waitForResult(unit);
+        if (!ok) {
+          throw new Error(`等待结果超时（${Math.round(this.resultTimeoutMs / 1000)}s 内没等到 answer.json）`);
+        }
 
         unit.status = UNIT_DONE;
         unit.finishedAt = new Date().toISOString();

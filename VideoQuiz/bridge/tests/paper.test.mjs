@@ -199,6 +199,58 @@ test('不同试卷可并行处理，不互相等待', async () => {
   }
 });
 
+// ── 4.5 投递 ≠ 完成：必须等结果真的写出来 ────────────────────────
+
+test('dispatch 返回但结果未写出时，unit 不能标 done', async () => {
+  const root = mkdtempSync(join(base, 'wait-'));
+  const hashes = [];
+  let finishedFlag = false;
+  const queue = new UnitQueue({
+    root,
+    // 投递立即返回，模拟「消息已投进会话」
+    dispatch: async (unit) => { hashes.push(unit.hash); },
+    // 结果要过一会儿才写出来
+    isFinished: () => finishedFlag,
+    collectResult: () => ({ items: [{ id: '1', answer: 'A' }] }),
+    pollIntervalMs: 20,
+    resultTimeoutMs: 2000,
+  });
+  try {
+    queue.enqueue({ hash: 'w'.repeat(64), kind: 'image', name: 'w.png', paperId: 'P' });
+    const running = queue.process('w'.repeat(64));
+    await new Promise((r) => setTimeout(r, 120));
+    // 结果没出来，应该还在 running，不能是 done
+    assert.equal(queue.get('w'.repeat(64)).status, 'running');
+    finishedFlag = true;
+    const unit = await running;
+    assert.equal(unit.status, 'done');
+    assert.equal(unit.answer ?? null, null); // unit 本身不存 answer，走 result.json
+    assert.deepEqual(queue.readPaper('P').answers, { '1': 'A' });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('结果等不到时标 failed，而不是假装 done', async () => {
+  const root = mkdtempSync(join(base, 'timeout-'));
+  const queue = new UnitQueue({
+    root,
+    dispatch: async () => {},
+    isFinished: () => false,
+    collectResult: () => null,
+    pollIntervalMs: 20,
+    resultTimeoutMs: 200,
+  });
+  try {
+    queue.enqueue({ hash: 't'.repeat(64), kind: 'image', name: 't.png', paperId: 'P2' });
+    const unit = await queue.process('t'.repeat(64));
+    assert.equal(unit.status, 'failed');
+    assert.match(String(unit.error), /超时/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 // ── 5. 模式与试卷在状态里持久化 ──────────────────────────────────
 
 test('taskMode 持久化到 units.json，重启后保留', () => {

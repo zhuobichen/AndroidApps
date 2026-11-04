@@ -106,6 +106,19 @@ const unitQueue = new UnitQueue({
   // 任务模式：整段 / 分段（文哥口径：区分模式，不区分会话）
   taskMode: process.env.VIDEOQUIZ_TASK_MODE || DEFAULT_TASK_MODE,
   dispatch: dispatchUnit,
+  // 会话是异步处理的：这里判断「结果真的写出来了」，process 才会标 done
+  isFinished: (unit) => {
+    const path = join(unitsRoot, unit.hash, 'answer.json');
+    if (!existsSync(path)) return false;
+    try {
+      const parsed = JSON.parse(readFileSync(path, 'utf8'));
+      return parsed !== null && typeof parsed === 'object';
+    } catch {
+      return false; // 还在写，等下一轮
+    }
+  },
+  // 单段最长等 20 分钟（视频段要抽帧 + 识别）
+  resultTimeoutMs: Number(process.env.VIDEOQUIZ_UNIT_TIMEOUT_MS) || 20 * 60 * 1000,
   collectResult: (unit) => {
     const path = join(unitsRoot, unit.hash, 'answer.json');
     if (!existsSync(path)) return null;
