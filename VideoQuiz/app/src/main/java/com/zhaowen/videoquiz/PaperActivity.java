@@ -59,6 +59,8 @@ public class PaperActivity extends AppCompatActivity {
     private volatile boolean polling = true;
     private volatile boolean uploading = false;
     private String lastRenderKey = "";
+    /** 最近一次拉到的试卷数据，转发时直接用它，保证发出去的是屏幕上的内容 */
+    private JSONObject lastPaper = null;
 
     private final ActivityResultLauncher<String[]> picker =
             registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> {
@@ -81,6 +83,7 @@ public class PaperActivity extends AppCompatActivity {
         findViewById(R.id.btnAddVideo).setOnClickListener(v -> picker.launch(new String[]{"video/*"}));
         findViewById(R.id.btnAddPhoto).setOnClickListener(v -> picker.launch(new String[]{"image/*"}));
         findViewById(R.id.btnNewPaper).setOnClickListener(v -> startNewPaper());
+        findViewById(R.id.btnShare).setOnClickListener(v -> shareAnswers());
         findViewById(R.id.btnRefresh).setOnClickListener(v -> {
             lastRenderKey = "";
             refreshNow();
@@ -284,6 +287,7 @@ public class PaperActivity extends AppCompatActivity {
 
     private void render(JSONObject data) {
         try {
+            lastPaper = data;   // 转发用，必须放在早退之前
             JSONObject paper = data.optJSONObject("paper");
             JSONArray units = data.optJSONArray("units");
             JSONObject answers = paper == null ? null : paper.optJSONObject("answers");
@@ -332,9 +336,10 @@ public class PaperActivity extends AppCompatActivity {
                 }
             }
 
-            // 累积答案
+            // 累积答案：默认只显示答案本身，解析折叠起来，点一下才展开
             if (answerCount > 0) {
                 addSectionTitle("已出答案（" + answerCount + " 题）");
+                JSONObject details = paper.optJSONObject("details");
                 List<String> ids = new ArrayList<>();
                 for (Iterator<String> it = answers.keys(); it.hasNext(); ) ids.add(it.next());
                 Collections.sort(ids, (a, b) -> {
@@ -345,11 +350,102 @@ public class PaperActivity extends AppCompatActivity {
                     }
                 });
                 for (String id : ids) {
-                    addRow("第 " + id + " 题", answers.optString(id, ""));
+                    addAnswerRow(id, answers.optString(id, ""), details == null ? "" : details.optString(id, ""));
                 }
             }
         } catch (Throwable ignored) {
         }
+    }
+
+    /** 一条答案：答案本体直接显示，解析默认折叠，点「展开」才看 */
+    private void addAnswerRow(String id, String answer, String detail) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams boxLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        boxLp.bottomMargin = dp(12);
+        box.setLayoutParams(boxLp);
+
+        // 答案本体：短答案一行；长文本（没有 detail 的老数据）也折起来
+        boolean longAnswer = answer != null && answer.length() > 80;
+        String head = "第 " + id + " 题　" + (longAnswer ? answer.substring(0, 80) + "…" : answer);
+        TextView answerView = new TextView(this);
+        answerView.setText(head);
+        answerView.setTextSize(15);
+        answerView.setTextColor(0xFF1F1F1F);
+        answerView.setLineSpacing(dp(4), 1f);
+        box.addView(answerView);
+
+        String extra = detail == null ? "" : detail.trim();
+        if (extra.isEmpty() && longAnswer) extra = answer;   // 老数据：全文当解析
+        if (extra.isEmpty()) {
+            answerList.addView(box);
+            return;
+        }
+
+        TextView toggle = new TextView(this);
+        toggle.setText("展开解析");
+        toggle.setTextSize(12);
+        toggle.setTextColor(0xFF5B6B8C);
+        LinearLayout.LayoutParams toggleLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        toggleLp.topMargin = dp(4);
+        toggle.setLayoutParams(toggleLp);
+        box.addView(toggle);
+
+        TextView detailView = new TextView(this);
+        detailView.setText(extra);
+        detailView.setTextSize(13);
+        detailView.setTextColor(0xFF555555);
+        detailView.setLineSpacing(dp(3), 1f);
+        detailView.setVisibility(View.GONE);
+        LinearLayout.LayoutParams detailLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        detailLp.topMargin = dp(6);
+        detailView.setLayoutParams(detailLp);
+        box.addView(detailView);
+
+        final boolean[] open = {false};
+        toggle.setOnClickListener(v -> {
+            open[0] = !open[0];
+            detailView.setVisibility(open[0] ? View.VISIBLE : View.GONE);
+            toggle.setText(open[0] ? "收起解析" : "展开解析");
+        });
+
+        answerList.addView(box);
+    }
+
+    /** 转发：把当前这套卷的答案生成纯文本，走系统分享 */
+    private void shareAnswers() {
+        JSONObject paper = lastPaper == null ? null : lastPaper.optJSONObject("paper");
+        JSONObject answers = paper == null ? null : paper.optJSONObject("answers");
+        if (answers == null || answers.length() == 0) {
+            toast("还没有答案可以转发");
+            return;
+        }
+
+        List<String> ids = new ArrayList<>();
+        for (Iterator<String> it = answers.keys(); it.hasNext(); ) ids.add(it.next());
+        Collections.sort(ids, (a, b) -> {
+            try {
+                return Integer.compare(Integer.parseInt(a.replaceAll("\\D", "")), Integer.parseInt(b.replaceAll("\\D", "")));
+            } catch (Throwable e) {
+                return a.compareTo(b);
+            }
+        });
+
+        StringBuilder text = new StringBuilder();
+        text.append(prefs.paperTitle()).append("（共 ").append(ids.size()).append(" 题）\n\n");
+        for (String id : ids) {
+            text.append(id).append(". ").append(answers.optString(id, "")).append('\n');
+        }
+        text.append("\n—— 由卷灵识别");
+
+        Intent send = new Intent(Intent.ACTION_SEND);
+        send.setType("text/plain");
+        send.putExtra(Intent.EXTRA_SUBJECT, prefs.paperTitle());
+        send.putExtra(Intent.EXTRA_TEXT, text.toString());
+        startActivity(Intent.createChooser(send, "转发答案"));
     }
 
     private String statusText(String status) {

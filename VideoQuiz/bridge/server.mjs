@@ -89,7 +89,7 @@ async function dispatchUnit(unit) {
       : '已出答案：暂无（这是这套卷的第 1 段）',
     '',
     '完成后把结果写成 JSON 到：' + answerPath + '（先写 answer.json.tmp，写完整再改名成 answer.json——桥接靠文件是否稳定来判断你是否写完）',
-    '格式：{"answer":"不超过 80 字的答案摘要","items":[{"id":"21","answer":"A","type":"choice"}],"notes":"不确定/修正的地方"}',
+    '格式：{"answer":"不超过 80 字的答案摘要","items":[{"id":"21","brief":"只放答案本身，选择题给字母、填空给词句、简答给要点序号，尽量 40 字内","detail":"解析/推理过程，可以长","type":"choice"}],"notes":"不确定/修正的地方"}',
     'items 只放本次新解出的题；重复题号会被忽略。写完就结束，不要额外回长文。',
   ].join('\n');
 

@@ -220,7 +220,7 @@ export class UnitQueue {
   readPaper(paperId) {
     const id = String(paperId || DEFAULT_PAPER_ID);
     const path = this.paperPath(id);
-    const empty = { paperId: id, createdAt: null, updatedAt: null, units: [], answers: {}, notes: [] };
+    const empty = { paperId: id, createdAt: null, updatedAt: null, units: [], answers: {}, details: {}, notes: [] };
     if (!existsSync(path)) return empty;
     try {
       const parsed = JSON.parse(readFileSync(path, 'utf8'));
@@ -230,6 +230,7 @@ export class UnitQueue {
         updatedAt: parsed.updatedAt ?? null,
         units: Array.isArray(parsed.units) ? parsed.units : [],
         answers: parsed.answers && typeof parsed.answers === 'object' ? parsed.answers : {},
+        details: parsed.details && typeof parsed.details === 'object' ? parsed.details : {},
         notes: Array.isArray(parsed.notes) ? parsed.notes : [],
       };
     } catch {
@@ -262,8 +263,14 @@ export class UnitQueue {
 
     const items = Array.isArray(result?.items) ? result.items : [];
     for (const item of items) {
-      if (item && item.id !== undefined && item.id !== null && String(item.id) !== '') {
-        paper.answers[String(item.id)] = item.answer ?? null;
+      if (!item || item.id === undefined || item.id === null || String(item.id) === '') continue;
+      const id = String(item.id);
+      // 新格式：brief 只放答案本身，detail 放解析。旧格式只有 answer，兼容之。
+      const brief = item.brief ?? item.answer ?? null;
+      const detail = item.detail ?? (item.brief !== undefined ? item.answer : null) ?? null;
+      paper.answers[id] = brief;
+      if (detail !== null && detail !== undefined && String(detail).trim() !== '') {
+        paper.details[id] = String(detail);
       }
     }
     if (result?.notes) {
