@@ -351,6 +351,12 @@ public class PaperActivity extends AppCompatActivity {
         c.setRequestProperty("X-Unit-Kind", kind);
         c.setRequestProperty("X-Unit-Name-B64", encodedName);
         c.setRequestProperty("X-Unit-Paper", paper);
+        // 带上用户选的会话；没选就让桥接用它配置的分段默认会话
+        String sessionId = prefs.bridgeSessionId();
+        if (sessionId != null && !sessionId.isEmpty()) {
+            c.setRequestProperty("X-Unit-Session-B64",
+                    Base64.encodeToString(sessionId.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP));
+        }
 
         try (InputStream in = new java.io.FileInputStream(file);
              OutputStream out = c.getOutputStream()) {
@@ -418,7 +424,9 @@ public class PaperActivity extends AppCompatActivity {
 
     private void renderEmpty() {
         tvPaper.setText("这套卷：" + prefs.paperTitle());
-        tvSummary.setText("还没有分段。每加一段，这一段的答案会直接出现在下面。");
+        String emptySess = prefs.bridgeSessionTitle();
+        tvSummary.setText("还没有分段。每加一段，这一段的答案会直接出现在下面。\n会话："
+                + (emptySess == null || emptySess.isEmpty() ? "电脑默认（设置里可选）" : emptySess));
         answerList.removeAllViews();
     }
 
@@ -450,7 +458,9 @@ public class PaperActivity extends AppCompatActivity {
                 if (failedUnits > 0) summary.append("（").append(failedUnits).append(" 段失败）");
                 summary.append(" · 累计 ").append(answerCount).append(" 题");
             }
-            tvSummary.setText(summary.toString());
+            String sessTitle = prefs.bridgeSessionTitle();
+            if (sessTitle == null || sessTitle.isEmpty()) sessTitle = "电脑默认（设置里可选）";
+            tvSummary.setText(summary.toString() + "\n会话：" + sessTitle);
 
             // 内容没变就不重绘，避免滚动位置被打回去
             String key = doneUnits + "/" + totalUnits + "#" + answerCount + "#" + (units == null ? 0 : units.toString().hashCode());
