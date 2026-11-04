@@ -328,8 +328,11 @@
                 android:layout_weight="1"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                android:text="选择视频"
-                android:textSize="14.5sp"
+                android:maxLines="1"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:text="选视频"
+                android:textSize="14sp"
                 app:cornerRadius="16dp" />
 
             <com.google.android.material.button.MaterialButton
@@ -338,9 +341,12 @@
                 android:layout_width="0dp"
                 android:layout_height="52dp"
                 android:layout_marginStart="8dp"
-                android:layout_weight="0.8"
+                android:layout_weight="1"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
+                android:maxLines="1"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
                 android:text="拍一题"
                 android:textSize="14sp"
                 app:cornerRadius="16dp" />
@@ -350,14 +356,17 @@
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="0dp"
                 android:layout_height="52dp"
-                android:layout_marginStart="10dp"
+                android:layout_marginStart="8dp"
                 android:layout_weight="1"
                 android:enabled="false"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                android:text="上传到电脑"
-                android:textSize="14.5sp"
+                android:maxLines="1"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:text="上传电脑"
+                android:textSize="14sp"
                 app:cornerRadius="16dp" />
-        </LinearLayout>
     </LinearLayout>
+</LinearLayout>
 </LinearLayout>

@@ -84,10 +84,7 @@ public class PaperActivity extends AppCompatActivity {
         findViewById(R.id.btnAddPhoto).setOnClickListener(v -> picker.launch(new String[]{"image/*"}));
         findViewById(R.id.btnNewPaper).setOnClickListener(v -> startNewPaper());
         findViewById(R.id.btnShare).setOnClickListener(v -> shareAnswers());
-        findViewById(R.id.btnRefresh).setOnClickListener(v -> {
-            lastRenderKey = "";
-            refreshNow();
-        });
+        findViewById(R.id.btnHistory).setOnClickListener(v -> showPaperHistory());
 
         ensurePaper();
         renderEmpty();
@@ -424,19 +421,9 @@ public class PaperActivity extends AppCompatActivity {
             return;
         }
 
-        List<String> ids = new ArrayList<>();
-        for (Iterator<String> it = answers.keys(); it.hasNext(); ) ids.add(it.next());
-        Collections.sort(ids, (a, b) -> {
-            try {
-                return Integer.compare(Integer.parseInt(a.replaceAll("\\D", "")), Integer.parseInt(b.replaceAll("\\D", "")));
-            } catch (Throwable e) {
-                return a.compareTo(b);
-            }
-        });
-
         StringBuilder text = new StringBuilder();
-        text.append(prefs.paperTitle()).append("（共 ").append(ids.size()).append(" 题）\n\n");
-        for (String id : ids) {
+        text.append(prefs.paperTitle()).append("（共 ").append(answers.length()).append(" 题）\n\n");
+        for (String id : sortedIds(answers)) {
             text.append(id).append(". ").append(answers.optString(id, "")).append('\n');
         }
         text.append("\n—— 由卷灵识别");
@@ -446,6 +433,67 @@ public class PaperActivity extends AppCompatActivity {
         send.putExtra(Intent.EXTRA_SUBJECT, prefs.paperTitle());
         send.putExtra(Intent.EXTRA_TEXT, text.toString());
         startActivity(Intent.createChooser(send, "转发答案"));
+    }
+
+    /** 历史试卷：换过「新卷」之后，从这里切回之前那套 */
+    private void showPaperHistory() {
+        pool.execute(() -> {
+            try {
+                JSONObject data = bridgeGet("/api/papers");
+                JSONArray papers = data.optJSONArray("papers");
+                final List<String> ids = new ArrayList<>();
+                final List<String> labels = new ArrayList<>();
+                if (papers != null) {
+                    for (int i = 0; i < papers.length(); i++) {
+                        JSONObject item = papers.optJSONObject(i);
+                        String id = item.optString("paperId", "");
+                        if (id.isEmpty()) continue;
+                        int answers = item.optInt("answerCount", 0);
+                        int units = item.optInt("unitCount", 0);
+                        String updated = item.optString("updatedAt", "");
+                        if (updated.length() >= 16) updated = updated.substring(5, 16).replace('T', ' ');
+                        String mark = id.equals(prefs.paperId()) ? " ← 当前" : "";
+                        ids.add(id);
+                        labels.add(id.replace("paper-", "") + "　" + units + " 段 / " + answers + " 题　" + updated + mark);
+                    }
+                }
+                ui.post(() -> {
+                    if (ids.isEmpty()) {
+                        toast("还没有历史试卷");
+                        return;
+                    }
+                    new androidx.appcompat.app.AlertDialog.Builder(this)
+                            .setTitle("选择要看的试卷")
+                            .setItems(labels.toArray(new String[0]), (d, which) -> {
+                                prefs.setPaperId(ids.get(which));
+                                lastRenderKey = "";
+                                lastPaper = null;
+                                renderEmpty();
+                                refreshNow();
+                                toast("已切到这套卷");
+                            })
+                            .setNegativeButton("取消", null)
+                            .show();
+                });
+            } catch (Throwable e) {
+                final String message = e.getMessage() == null ? e.toString() : e.getMessage();
+                ui.post(() -> toast("读取历史失败：" + message));
+            }
+        });
+    }
+
+    /** 题号排序：数字优先按数值，非数字按字典序 */
+    private List<String> sortedIds(JSONObject answers) {
+        List<String> ids = new ArrayList<>();
+        for (Iterator<String> it = answers.keys(); it.hasNext(); ) ids.add(it.next());
+        Collections.sort(ids, (a, b) -> {
+            try {
+                return Integer.compare(Integer.parseInt(a.replaceAll("\\D", "")), Integer.parseInt(b.replaceAll("\\D", "")));
+            } catch (Throwable e) {
+                return a.compareTo(b);
+            }
+        });
+        return ids;
     }
 
     private String statusText(String status) {

@@ -101,16 +101,17 @@
                 android:textSize="12sp" />
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnRefresh"
+                android:id="@+id/btnHistory"
                 style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="0dp"
                 android:layout_height="40dp"
                 android:layout_weight="1"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                android:text="刷新"
+                android:maxLines="1"
+                android:text="历史试卷"
                 android:textSize="12sp" />
-        </LinearLayout>
+    </LinearLayout>
     </LinearLayout>
 
     <View

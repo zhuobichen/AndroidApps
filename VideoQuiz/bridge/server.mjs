@@ -741,6 +741,11 @@ const server = createServer(async (req, res) => {
       });
     }
 
+    // 试卷列表：换过新卷之后，从这里找回之前那套
+    if (req.method === 'GET' && url.pathname === '/api/papers') {
+      return json(res, 200, { ok: true, papers: unitQueue.listPapers() });
+    }
+
     // 试卷累积结果：同一套卷的所有分段答案在这里汇合
     const paperMatch = url.pathname.match(/^\/api\/papers\/([^/]{1,120})$/);
     if (req.method === 'GET' && paperMatch) {

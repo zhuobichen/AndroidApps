@@ -22,7 +22,7 @@
  *     不并发抢会话上下文；不同 paperId 互不阻塞。
  */
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const UNIT_PENDING = 'pending';
@@ -242,6 +242,36 @@ export class UnitQueue {
     const path = this.paperPath(paper.paperId);
     mkdirSync(join(this.root, '_papers'), { recursive: true });
     writeJsonAtomic(path, paper);
+  }
+
+  /**
+   * 列出所有做过的试卷（按最近更新倒序）。
+   * 用户「换一套新卷」之后还能从历史里找回之前那套。
+   */
+  listPapers() {
+    const dir = join(this.root, '_papers');
+    if (!existsSync(dir)) return [];
+    const out = [];
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith('.json')) continue;
+      const path = join(dir, name);
+      try {
+        const parsed = JSON.parse(readFileSync(path, 'utf8'));
+        const id = parsed.paperId ?? name.replace(/\.json$/, '');
+        out.push({
+          paperId: id,
+          createdAt: parsed.createdAt ?? null,
+          updatedAt: parsed.updatedAt ?? null,
+          answerCount: parsed.answers ? Object.keys(parsed.answers).length : 0,
+          unitCount: Array.isArray(parsed.units) ? parsed.units.length : 0,
+          title: parsed.title ?? null,
+        });
+      } catch {
+        // 坏文件跳过，不影响其它试卷
+      }
+    }
+    out.sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')));
+    return out;
   }
 
   /** 把某个 unit 的结果并入试卷：答案按题号累积，后来的覆盖前面的 */
