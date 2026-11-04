@@ -8,7 +8,7 @@ import { basename, extname, join, resolve } from 'node:path';
 import { networkInterfaces } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { UnitQueue, hashContent, normalizeMode, MODES, DEFAULT_MODE } from './units.mjs';
+import { UnitQueue, hashContent, normalizeMode, normalizeTaskMode, resolveSession, MODES, TASK_MODES, DEFAULT_MODE, DEFAULT_TASK_MODE, DEFAULT_PAPER_ID } from './units.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const dataRoot = resolve(here, 'data');
@@ -20,6 +20,15 @@ const bindHost = process.env.VIDEOQUIZ_BIND_HOST || wlan.find(entry => entry.fam
 const maxBytes = Number(process.env.VIDEOQUIZ_MAX_BYTES || 2 * 1024 * 1024 * 1024);
 const supervisorUrl = process.env.VIDEOQUIZ_SUPERVISOR_URL || 'http://127.0.0.1:3080/dsh-agent-supervisor/chat';
 const targetSessionId = process.env.VIDEOQUIZ_TARGET_SESSION_ID || 'session-3b1e209a-14ac-4002-a31f-4efdc4f9064c';
+// 按【模式】分会话，而不是按【段】分会话：
+//   整段模式 → 一个会话（一次提交完整材料）
+//   分段模式 → 一个会话（同一套试卷的所有分段都进这个会话，不按段拆）
+// 两者不共用，避免整卷和分段的上下文互相污染。
+const wholeSessionId = process.env.VIDEOQUIZ_WHOLE_SESSION_ID || targetSessionId;
+const segmentSessionId = process.env.VIDEOQUIZ_SEGMENT_SESSION_ID || targetSessionId;
+if (wholeSessionId === segmentSessionId) {
+  console.warn('[warn] 整段模式与分段模式当前落在同一个会话，建议用 VIDEOQUIZ_WHOLE_SESSION_ID / VIDEOQUIZ_SEGMENT_SESSION_ID 分开');
+}
 // 回传地址给的是电脑上的 Harness 会话，走回环最稳，也不受网卡变化影响。
 const completionUrl = `http://127.0.0.1:${port}`;
 mkdirSync(jobsRoot, { recursive: true });
@@ -32,24 +41,56 @@ function unitFilePath(unit) {
   return join(unitsRoot, unit.hash, unit.name);
 }
 
+/**
+ * 决定一个 unit 该派到哪个会话。
+ * 规则（2026-11 文哥口径）：
+ *   1. 请求显式指定了 sessionId → 用它；
+ *   2. 否则按【任务模式】选：整段走 whole 会话，分段走 segment 会话；
+ *   3. 同一套试卷的所有分段共用一个分段会话，不按段拆会话。
+ */
+function sessionForUnit(unit) {
+  return resolveSession(
+    {
+      meta: unit.meta ?? {},
+      taskMode: unit.context?.taskMode ?? unit.taskMode ?? unitQueue.getTaskMode(),
+    },
+    { whole: wholeSessionId, segment: segmentSessionId, fallback: targetSessionId },
+  );
+}
+
 async function dispatchUnit(unit) {
-  const session = (unit.meta && typeof unit.meta.sessionId === 'string' && unit.meta.sessionId) || targetSessionId;
+  const session = sessionForUnit(unit);
   const answerPath = join(unitsRoot, unit.hash, 'answer.json');
+
+  const ctx = unit.context ?? {};
+  const prior = ctx.priorAnswers ?? {};
+  const priorIds = Object.keys(prior);
+  const priorLines = priorIds.slice(0, 200).map((id) => `  第${id}题：${prior[id]}`).join('\n');
+  const isSegment = (ctx.taskMode ?? unit.taskMode) === 'segment';
+  const kindLabel = unit.kind === 'image' ? '一张相片' : '一段视频';
+
   const prompt = [
-    '【分段任务 · 单个 unit】',
-    `unit 类型：${unit.kind === 'image' ? '单张图片' : '一段视频'}`,
+    '【同一套试卷 · 继续处理】',
+    `试卷标识：${ctx.paperId ?? unit.paperId ?? DEFAULT_PAPER_ID}`,
+    '这套卷的其他分段都会落在当前会话里，是同一份卷子的续传，不要另起题目、不要当成新卷。',
+    isSegment
+      ? `本次提交：分段模式的第 ${ctx.seq ?? unit.seq ?? '?'} 段（${kindLabel}）`
+      : `本次提交：整段模式（${kindLabel}，一次给出完整材料）`,
     `文件：${unitFilePath(unit)}`,
-    `unit 标识：${unit.hash}`,
     '',
-    '只处理这一个 unit：不要等后面的 unit，也不要去读别的 unit 的文件；',
-    '用户之后会继续发下一张 / 下一段，每段独立出结果。',
-    unit.kind === 'image'
-      ? '识别这张图片里的题目并作答。'
-      : '只处理这一段视频（不要去找“完整视频”）：抽帧 → 识别题 → 作答。',
+    '处理规则：',
+    '1) 先看下面「已出答案」，这些题已定稿，不要重新识别，也不要改答案；',
+    '2) 只处理本段新出现的题目，增量追加；',
+    '3) 若本段原文更清晰、与已出答案冲突，以本段为准，并在 notes 里写明改了哪题、为什么；',
+    '4) 题目可能跨段（上一段题干、这一段选项），跨段时以本段为准补齐。',
+    '',
+    priorIds.length
+      ? `已出答案（${priorIds.length} 题）：\n${priorLines}`
+      : '已出答案：暂无（这是这套卷的第 1 段）',
     '',
     '完成后把结果写成 JSON 到：' + answerPath,
-    '格式：{"answer":"不超过 80 字的答案摘要","items":[{"id":"21","answer":"A","type":"choice"}],"notes":"不确定的地方"}',
-    '写完就结束，不要额外回长文。',
+    '格式：{"answer":"不超过 80 字的答案摘要","items":[{"id":"21","answer":"A","type":"choice"}],"notes":"不确定/修正的地方"}',
+    'items 只放本次新解出的题；重复题号会被忽略。写完就结束，不要额外回长文。',
   ].join('\n');
 
   const outcome = await supervisorCommand({ op: 'send', sessionId: session, text: prompt });
@@ -62,6 +103,8 @@ const unitQueue = new UnitQueue({
   root: unitsRoot,
   // 模式优先级：请求入参 > 环境变量 > units.json 持久化值 > 默认 batch
   mode: process.env.VIDEOQUIZ_MODE || DEFAULT_MODE,
+  // 任务模式：整段 / 分段（文哥口径：区分模式，不区分会话）
+  taskMode: process.env.VIDEOQUIZ_TASK_MODE || DEFAULT_TASK_MODE,
   dispatch: dispatchUnit,
   collectResult: (unit) => {
     const path = join(unitsRoot, unit.hash, 'answer.json');
@@ -609,17 +652,38 @@ const server = createServer(async (req, res) => {
       }
       const body = Buffer.concat(chunks);
       const hash = hashContent(body);
-      // 模式优先级：请求入参(?mode= / X-Unit-Mode) > 环境变量 > 持久化值 > batch
+      // 调度模式优先级：请求入参(?mode= / X-Unit-Mode) > 环境变量 > 持久化值 > batch
       const mode = normalizeMode(
         req.headers['x-unit-mode'] || url.searchParams.get('mode') || '',
         unitQueue.getMode(),
       );
-      const result = unitQueue.enqueue({ hash, kind, name, size: body.length, mode, meta: session === '' ? {} : { sessionId: session } });
+      // 任务模式：整段 / 分段。显式传了就用，没传按全局默认。
+      const taskMode = normalizeTaskMode(
+        req.headers['x-unit-task-mode'] || url.searchParams.get('taskMode') || url.searchParams.get('task') || '',
+        unitQueue.getTaskMode(),
+      );
+      // 试卷标识：同一套卷的多个分段传同一个 paperId，才能共享上下文与已出答案。
+      // 不传则默认全部归到同一套卷（文哥说「一般都属于同一套试卷」）。
+      const paperId = String(
+        req.headers['x-unit-paper']
+        || url.searchParams.get('paperId')
+        || url.searchParams.get('paper')
+        || DEFAULT_PAPER_ID,
+      ).trim() || DEFAULT_PAPER_ID;
+
+      const result = unitQueue.enqueue({
+        hash, kind, name, size: body.length, mode, paperId, taskMode,
+        meta: {
+          ...(session === '' ? {} : { sessionId: session }),
+          paperId,
+          taskMode,
+        },
+      });
 
       if (!result.duplicate) {
         writeFileSync(unitFilePath(result.unit), body);
       }
-      // 三种模式的分岔只在这里：single/video 到货即处理，batch 等显式 flush
+      // 调度模式的分岔只在这里：single/video 到货即处理，batch 等显式 flush
       if (mode !== 'batch') {
         setImmediate(() => { unitQueue.process(hash).catch(() => {}); });
       }
@@ -629,23 +693,65 @@ const server = createServer(async (req, res) => {
         hash,
         kind,
         mode,
+        taskMode,
+        paperId,
+        seq: unitQueue.get(hash)?.seq ?? null,
+        session: sessionForUnit(unitQueue.get(hash) ?? { taskMode, meta: {} }),
         name,
         duplicate: result.duplicate,
         status: unitQueue.get(hash)?.status ?? 'pending',
         resultUrl: `/api/units/${hash}`,
+        paperUrl: `/api/papers/${encodeURIComponent(paperId)}`,
       });
     }
 
     // 批量模式：收齐后一次性跑完（也可以带 ?mode= 临时切到 batch 再 flush）
     if (req.method === 'POST' && url.pathname === '/api/units/flush') {
       const flushMode = normalizeMode(url.searchParams.get('mode') || '', unitQueue.getMode());
-      const done = await unitQueue.flush();
-      return json(res, 200, { ok: true, mode: flushMode, processed: done, summary: unitQueue.summarize() });
+      const paperId = String(url.searchParams.get('paperId') || url.searchParams.get('paper') || '').trim();
+      const pending = paperId === ''
+        ? unitQueue.list().filter((u) => u.status === 'pending')
+        : unitQueue.listByPaper(paperId).filter((u) => u.status === 'pending');
+      // 同一试卷内串行由 process() 的 paper 链保证，这里并发只作用于不同试卷
+      await Promise.all(pending.map((u) => unitQueue.process(u.hash).catch(() => {})));
+      return json(res, 200, {
+        ok: true,
+        mode: flushMode,
+        taskMode: unitQueue.getTaskMode(),
+        processed: pending.length,
+        ...(paperId === '' ? {} : { paperId }),
+        summary: unitQueue.summarize(),
+      });
+    }
+
+    // 试卷累积结果：同一套卷的所有分段答案在这里汇合
+    const paperMatch = url.pathname.match(/^\/api\/papers\/([^/]{1,120})$/);
+    if (req.method === 'GET' && paperMatch) {
+      const paperId = decodeURIComponent(paperMatch[1]);
+      const paper = unitQueue.readPaper(paperId);
+      const units = unitQueue.listByPaper(paperId).map((u) => ({
+        hash: u.hash,
+        seq: u.seq,
+        kind: u.kind,
+        name: u.name,
+        status: u.status,
+        taskMode: u.taskMode,
+        error: u.error,
+      }));
+      return json(res, 200, { ok: true, paper, units });
     }
 
     // 模式查询 / 切换（持久化到 units.json，跨重启保留）
     if (req.method === 'GET' && url.pathname === '/api/mode') {
-      return json(res, 200, { ok: true, mode: unitQueue.getMode(), modes: MODES, summary: unitQueue.summarize() });
+      return json(res, 200, {
+        ok: true,
+        mode: unitQueue.getMode(),
+        modes: MODES,
+        taskMode: unitQueue.getTaskMode(),
+        taskModes: TASK_MODES,
+        sessions: { whole: wholeSessionId, segment: segmentSessionId },
+        summary: unitQueue.summarize(),
+      });
     }
     if (req.method === 'POST' && url.pathname === '/api/mode') {
       let payload;
@@ -654,6 +760,19 @@ const server = createServer(async (req, res) => {
       } catch (error) {
         return json(res, 400, { ok: false, code: 'BAD_JSON', message: error.message });
       }
+
+      // 任务模式（整段 / 分段）与调度模式（batch / single / video）都可以在这里切
+      const rawTask = typeof payload?.taskMode === 'string'
+        ? payload.taskMode
+        : (url.searchParams.get('taskMode') || url.searchParams.get('task') || '');
+      if (rawTask !== '') {
+        if (!TASK_MODES.includes(normalizeTaskMode(rawTask, ''))) {
+          return json(res, 400, { ok: false, code: 'BAD_TASK_MODE', taskModes: TASK_MODES });
+        }
+        const nextTask = unitQueue.setTaskMode(rawTask);
+        return json(res, 200, { ok: true, taskMode: nextTask, taskModes: TASK_MODES });
+      }
+
       const raw = typeof payload?.mode === 'string' ? payload.mode : url.searchParams.get('mode') || '';
       if (raw === '' || !MODES.includes(normalizeMode(raw, ''))) {
         return json(res, 400, { ok: false, code: 'BAD_MODE', modes: MODES });

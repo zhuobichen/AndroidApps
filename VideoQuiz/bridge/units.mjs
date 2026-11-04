@@ -11,6 +11,15 @@
  *   - 同一 unit 重复上传按**内容 sha256** 幂等去重，不重复识别
  *   - 每个 unit 完成即写 result 文件（不攒到最后）
  *   - 与老路径完全解耦：老 job 协议不受影响
+ *
+ * 同一试卷（paper）语义（2026-11 文哥口径）：
+ *   - 分段任务默认同属一套试卷，**不拆会话**：所有 unit 落在同一个 targetSession，
+ *     共享同一份试卷上下文与已出答案。
+ *   - 区分的是【模式】不是【会话】：
+ *       taskMode = 'whole'  整段模式 —— 一次提交完整材料（整段视频 / 整卷图）
+ *       taskMode = 'segment' 分段模式 —— 分多次提交（多段视频 / 多张相片）
+ *   - 并发互斥靠**同一试卷内串行**：同 paperId 的 unit 按入队顺序逐个处理，
+ *     不并发抢会话上下文；不同 paperId 互不阻塞。
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync } from 'node:fs';
@@ -30,12 +39,59 @@ export const UNIT_FAILED = 'failed';
 export const MODES = ['batch', 'single', 'video'];
 export const DEFAULT_MODE = 'batch';
 
+/**
+ * 任务模式：整段 vs 分段（文哥口径，对外可见的区分）
+ *   whole   —— 整段模式：一次提交完整材料（整段视频 / 整卷相片）
+ *   segment —— 分段模式：分多次提交（多段视频 / 逐张相片）
+ * 同一套试卷的多个分段共享同一个 paperId，进而共享上下文与已出答案。
+ */
+export const TASK_MODES = ['whole', 'segment'];
+export const DEFAULT_TASK_MODE = 'whole';
+
+export function normalizeTaskMode(value, fallback = DEFAULT_TASK_MODE) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (TASK_MODES.includes(raw)) return raw;
+  if (raw === 'batch' || raw === 'full' || raw === 'single-file') return 'whole';
+  if (raw === 'incremental' || raw === 'multi' || raw === 'split') return 'segment';
+  return fallback;
+}
+
 export function normalizeMode(value, fallback = DEFAULT_MODE) {
   const raw = String(value ?? '').trim().toLowerCase();
   if (MODES.includes(raw)) return raw;
   if (raw === 'incremental' || raw === 'incremental-single' || raw === 'shot') return 'single';
   if (raw === 'incremental-video' || raw === 'segment') return 'video';
   return fallback;
+}
+
+/** 默认试卷 id：没显式指定时，所有分段都归到同一套试卷 */
+export const DEFAULT_PAPER_ID = 'default';
+
+/**
+ * 决定一个 unit 该派到哪个会话（纯函数，便于测试）。
+ *
+ * 文哥口径（2026-11）：按【模式】分会话，不按【段】分会话。
+ *   1. 调用方显式指定 sessionId → 用它；
+ *   2. 否则整段模式走 whole 会话，分段模式走 segment 会话；
+ *   3. 同一套试卷的所有分段共用一个分段会话，不按段拆。
+ *
+ * @param {{meta?: object, taskMode?: string}} unit
+ * @param {{whole?: string, segment?: string}} sessions
+ * @returns {string}
+ */
+export function resolveSession(unit, sessions = {}) {
+  const explicit = unit && unit.meta && typeof unit.meta.sessionId === 'string'
+    ? unit.meta.sessionId.trim()
+    : '';
+  if (explicit !== '') return explicit;
+
+  const mode = normalizeTaskMode(
+    (unit && unit.taskMode) || (unit && unit.meta && unit.meta.taskMode),
+    DEFAULT_TASK_MODE,
+  );
+  const whole = sessions.whole || sessions.fallback || '';
+  const segment = sessions.segment || sessions.fallback || '';
+  return mode === 'segment' ? segment : whole;
 }
 
 
@@ -59,20 +115,37 @@ export class UnitQueue {
    * @param {(unit: object) => boolean} [options.isFinished]    可选：判断 unit 是否已产出结果
    * @param {(unit: object) => object|null} [options.collectResult] 可选：收集该 unit 的答案
    */
-  constructor({ root, dispatch, isFinished, collectResult, mode }) {
+  constructor({ root, dispatch, isFinished, collectResult, mode, taskMode }) {
     this.root = root;
     this.dispatch = dispatch;
     this.isFinished = isFinished ?? (() => false);
     this.collectResult = collectResult ?? (() => null);
     this.statePath = join(root, 'units.json');
     this.initialMode = mode === undefined ? undefined : normalizeMode(mode);
+    this.initialTaskMode = taskMode === undefined ? undefined : normalizeTaskMode(taskMode);
     this.state = this.#load();
     this.running = new Set();
+    /** 每个试卷一条串行链：同 paperId 的 unit 排队跑，不同 paperId 互不阻塞 */
+    this.paperChains = new Map();
   }
 
-  /** 当前模式（持久化在 units.json 里，跨重启保留） */
+  /** 当前调度模式（batch / single / video） */
   getMode() {
     return normalizeMode(this.state.mode, DEFAULT_MODE);
+  }
+
+  /** 当前任务模式（whole 整段 / segment 分段） */
+  getTaskMode() {
+    return normalizeTaskMode(this.state.taskMode, this.initialTaskMode ?? DEFAULT_TASK_MODE);
+  }
+
+  setTaskMode(taskMode) {
+    const next = normalizeTaskMode(taskMode, this.getTaskMode());
+    if (next !== this.state.taskMode) {
+      this.state.taskMode = next;
+      this.save();
+    }
+    return this.state.taskMode;
   }
 
   /** 显式切换模式；只影响「何时处理」，不影响已入队 unit 与 hash 幂等 */
@@ -88,17 +161,38 @@ export class UnitQueue {
 
   #load() {
     if (!existsSync(this.root)) mkdirSync(this.root, { recursive: true });
-    if (!existsSync(this.statePath)) return { version: 1, mode: this.initialMode ?? DEFAULT_MODE, units: {} };
+    if (!existsSync(this.statePath)) {
+      return {
+        version: 1,
+        mode: this.initialMode ?? DEFAULT_MODE,
+        taskMode: this.initialTaskMode ?? DEFAULT_TASK_MODE,
+        units: {},
+      };
+    }
     try {
       const parsed = JSON.parse(readFileSync(this.statePath, 'utf8'));
       if (!parsed || typeof parsed !== 'object' || typeof parsed.units !== 'object' || parsed.units === null) {
-        return { version: 1, mode: this.initialMode ?? DEFAULT_MODE, units: {} };
+        return {
+          version: 1,
+          mode: this.initialMode ?? DEFAULT_MODE,
+          taskMode: this.initialTaskMode ?? DEFAULT_TASK_MODE,
+          units: {},
+        };
       }
-      return { ...parsed, mode: normalizeMode(parsed.mode, this.initialMode ?? DEFAULT_MODE) };
+      return {
+        ...parsed,
+        mode: normalizeMode(parsed.mode, this.initialMode ?? DEFAULT_MODE),
+        taskMode: normalizeTaskMode(parsed.taskMode, this.initialTaskMode ?? DEFAULT_TASK_MODE),
+      };
     } catch {
       // 状态损坏时不要整个队列瘫痪：留个备份，从空队列继续
       try { renameSync(this.statePath, `${this.statePath}.corrupt-${Date.now()}`); } catch {}
-      return { version: 1, mode: this.initialMode ?? DEFAULT_MODE, units: {} };
+      return {
+        version: 1,
+        mode: this.initialMode ?? DEFAULT_MODE,
+        taskMode: this.initialTaskMode ?? DEFAULT_TASK_MODE,
+        units: {},
+      };
     }
   }
 
@@ -111,19 +205,103 @@ export class UnitQueue {
     return join(this.root, hash);
   }
 
+  /** 试卷累积文件路径：同一套试卷的多个 unit 共享这里 */
+  paperPath(paperId) {
+    return join(this.root, '_papers', `${String(paperId || DEFAULT_PAPER_ID)}.json`);
+  }
+
+  /** 读试卷累积状态（不存在则给空骨架） */
+  readPaper(paperId) {
+    const id = String(paperId || DEFAULT_PAPER_ID);
+    const path = this.paperPath(id);
+    const empty = { paperId: id, createdAt: null, updatedAt: null, units: [], answers: {}, notes: [] };
+    if (!existsSync(path)) return empty;
+    try {
+      const parsed = JSON.parse(readFileSync(path, 'utf8'));
+      return {
+        paperId: id,
+        createdAt: parsed.createdAt ?? null,
+        updatedAt: parsed.updatedAt ?? null,
+        units: Array.isArray(parsed.units) ? parsed.units : [],
+        answers: parsed.answers && typeof parsed.answers === 'object' ? parsed.answers : {},
+        notes: Array.isArray(parsed.notes) ? parsed.notes : [],
+      };
+    } catch {
+      return empty;
+    }
+  }
+
+  savePaper(paper) {
+    const path = this.paperPath(paper.paperId);
+    mkdirSync(join(this.root, '_papers'), { recursive: true });
+    writeJsonAtomic(path, paper);
+  }
+
+  /** 把某个 unit 的结果并入试卷：答案按题号累积，后来的覆盖前面的 */
+  mergeIntoPaper(unit, result) {
+    const paper = this.readPaper(unit.paperId);
+    const now = new Date().toISOString();
+    if (!paper.createdAt) paper.createdAt = now;
+    paper.updatedAt = now;
+
+    if (!paper.units.some((u) => u.hash === unit.hash)) {
+      paper.units.push({
+        hash: unit.hash,
+        seq: unit.seq ?? 0,
+        kind: unit.kind,
+        name: unit.name,
+        finishedAt: unit.finishedAt ?? now,
+      });
+    }
+
+    const items = Array.isArray(result?.items) ? result.items : [];
+    for (const item of items) {
+      if (item && item.id !== undefined && item.id !== null && String(item.id) !== '') {
+        paper.answers[String(item.id)] = item.answer ?? null;
+      }
+    }
+    if (result?.notes) {
+      paper.notes.push({ hash: unit.hash, notes: String(result.notes).slice(0, 2000) });
+    }
+
+    this.savePaper(paper);
+    return paper;
+  }
+
+  /**
+   * 同一试卷内串行：把 fn 排到该 paper 队的队尾。
+   * 不同 paper 各有一条链，互不阻塞；同 paper 的 unit 严格按入队顺序跑，
+   * 保证不会两个 unit 同时往同一个会话上下文里塞东西。
+   */
+  runInPaper(paperId, fn) {
+    const key = String(paperId || DEFAULT_PAPER_ID);
+    const prev = this.paperChains.get(key) ?? Promise.resolve();
+    const next = prev.then(fn, fn);
+    this.paperChains.set(key, next.catch(() => {}));
+    return next;
+  }
+
   /**
    * 入队（幂等）。
    * @returns {{unit: object, duplicate: boolean}}
    */
-  enqueue({ hash, kind, name, size = 0, meta = {}, mode }) {
+  enqueue({ hash, kind, name, size = 0, meta = {}, mode, paperId, taskMode }) {
     const existing = this.state.units[hash];
     if (existing) {
       return { unit: existing, duplicate: true };
     }
+
+    const pid = String(paperId || meta.paperId || DEFAULT_PAPER_ID);
+    // 同一试卷内的序号：用来告诉会话「这是第几段」，也用来保证重放顺序
+    const seq = this.list().filter((u) => (u.paperId ?? DEFAULT_PAPER_ID) === pid).length + 1;
+
     const unit = {
       hash,
       kind,                        // 'image' | 'video-segment'
       mode: normalizeMode(mode ?? this.getMode(), DEFAULT_MODE),
+      taskMode: normalizeTaskMode(taskMode ?? this.getTaskMode(), DEFAULT_TASK_MODE),
+      paperId: pid,
+      seq,
       name,
       size,
       status: UNIT_PENDING,
@@ -155,7 +333,8 @@ export class UnitQueue {
   }
 
   /**
-   * 跑一个 unit：置 running → dispatch → 收结果 → 写 result.json → 置 done。
+   * 跑一个 unit：置 running → dispatch → 收结果 → 写 result.json → 并入试卷 → 置 done。
+   * 同一试卷内串行（runInPaper），单 paper 内的 unit 不会并发抢同一个会话上下文；
    * 单个 unit 失败不影响其它 unit。
    */
   async process(hash) {
@@ -164,40 +343,68 @@ export class UnitQueue {
     if (unit.status === UNIT_DONE) return unit;
     if (this.running.has(hash)) return unit;
 
-    this.running.add(hash);
-    unit.status = UNIT_RUNNING;
-    unit.startedAt = new Date().toISOString();
-    unit.attempts = (unit.attempts ?? 0) + 1;
-    this.save();
+    const pid = unit.paperId ?? DEFAULT_PAPER_ID;
 
-    try {
-      await this.dispatch(unit);
-      unit.status = UNIT_DONE;
-      unit.finishedAt = new Date().toISOString();
-      unit.error = null;
-      const result = this.collectResult(unit);
-      const resultPath = join(this.dirFor(hash), 'result.json');
-      writeJsonAtomic(resultPath, {
-        hash,
-        kind: unit.kind,
-        name: unit.name,
-        finishedAt: unit.finishedAt,
-        answer: result ?? null,
-      });
-      unit.resultPath = resultPath;
-    } catch (error) {
-      unit.status = UNIT_FAILED;
-      unit.finishedAt = new Date().toISOString();
-      unit.error = String(error?.message ?? error);
-    } finally {
-      this.running.delete(hash);
+    return this.runInPaper(pid, async () => {
+      // 排队期间可能已被别的调用跑完，二次确认
+      if (unit.status === UNIT_DONE) return unit;
+      if (this.running.has(hash)) return unit;
+
+      this.running.add(hash);
+      unit.status = UNIT_RUNNING;
+      unit.startedAt = new Date().toISOString();
+      unit.attempts = (unit.attempts ?? 0) + 1;
       this.save();
-    }
-    return unit;
+
+      try {
+        // 把「同一套试卷的上下文」交给 dispatch：
+        // 会话据此知道自己是第几段、前面已经出了哪些答案，避免重复识别与自相矛盾。
+        const paper = this.readPaper(pid);
+        unit.context = {
+          paperId: pid,
+          seq: unit.seq,
+          taskMode: unit.taskMode,
+          priorAnswers: { ...paper.answers },
+          priorUnitCount: paper.units.length,
+        };
+
+        await this.dispatch(unit);
+
+        unit.status = UNIT_DONE;
+        unit.finishedAt = new Date().toISOString();
+        unit.error = null;
+        const result = this.collectResult(unit);
+        const resultPath = join(this.dirFor(hash), 'result.json');
+        writeJsonAtomic(resultPath, {
+          hash,
+          kind: unit.kind,
+          name: unit.name,
+          paperId: pid,
+          seq: unit.seq,
+          finishedAt: unit.finishedAt,
+          answer: result ?? null,
+        });
+        unit.resultPath = resultPath;
+
+        // 并入试卷累积：同一套试卷的已出答案在这里汇合
+        this.mergeIntoPaper(unit, result);
+      } catch (error) {
+        unit.status = UNIT_FAILED;
+        unit.finishedAt = new Date().toISOString();
+        unit.error = String(error?.message ?? error);
+      } finally {
+        delete unit.context;
+        this.running.delete(hash);
+        this.save();
+      }
+      return unit;
+    });
   }
 
   /**
-   * 续跑：把所有可恢复 unit 重新派发（不阻塞，并发跑）。
+   * 续跑：把所有可恢复 unit 重新派发。
+   * 并发仅在不同试卷之间生效——同一试卷的 unit 由 process() 内的 paper 串行链排队，
+   * 所以这里给多大并发都不会让同一套试卷的两个 unit 同时跑。
    * @returns {Promise<number>} 被恢复的 unit 数
    */
   async resumeAll({ concurrency = 2 } = {}) {
@@ -232,6 +439,7 @@ export class UnitQueue {
 
   /**
    * 批量模式：把当前所有 pending 一次跑完（batch 模式用：收齐再跑）。
+   * 与 resumeAll 同理：并发只在跨试卷之间生效，同试卷由 paper 串行链排队。
    * @returns {Promise<number>} 处理数量
    */
   async flush({ concurrency = 2 } = {}) {
@@ -253,11 +461,32 @@ export class UnitQueue {
     const all = this.list();
     const by = { pending: 0, running: 0, done: 0, failed: 0 };
     const byMode = { batch: 0, single: 0, video: 0 };
+    const byTaskMode = { whole: 0, segment: 0 };
+    const papers = new Set();
     for (const u of all) {
       by[u.status] = (by[u.status] ?? 0) + 1;
       const m = normalizeMode(u.mode, DEFAULT_MODE);
       byMode[m] = (byMode[m] ?? 0) + 1;
+      const tm = normalizeTaskMode(u.taskMode, DEFAULT_TASK_MODE);
+      byTaskMode[tm] = (byTaskMode[tm] ?? 0) + 1;
+      papers.add(u.paperId ?? DEFAULT_PAPER_ID);
     }
-    return { total: all.length, mode: this.getMode(), byMode, ...by };
+    return {
+      total: all.length,
+      mode: this.getMode(),
+      taskMode: this.getTaskMode(),
+      byMode,
+      byTaskMode,
+      papers: [...papers],
+      ...by,
+    };
+  }
+
+  /** 列出某套试卷的 unit（按 seq 顺序） */
+  listByPaper(paperId) {
+    const pid = String(paperId || DEFAULT_PAPER_ID);
+    return this.list()
+      .filter((u) => (u.paperId ?? DEFAULT_PAPER_ID) === pid)
+      .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
   }
 }

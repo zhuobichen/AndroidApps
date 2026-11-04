@@ -429,6 +429,53 @@ POST /shutdown
 - **只做选择题**：blank / essay 类型原样交给 DSH
 - 中文长文本推理较弱，靠 `minConfidence` 兜住
 
+## 八点六、整段模式与分段模式（同一套试卷）
+
+文哥口径（2026-11）：**用模式区分，不按段拆会话**。
+
+| 模式 | taskMode | 适用 | 会话 |
+| --- | --- | --- | --- |
+| 整段模式 | `whole` | 一次提交完整材料（整段视频 / 整卷相片） | 一个会话 |
+| 分段模式 | `segment` | 分多次提交（多段视频 / 逐张相片） | **同一套卷的所有分段共用一个会话** |
+
+关键约束：
+
+- 整段与分段**不共用会话**，避免上下文互相污染；
+- 但分段**不是每段一个会话**——同一套试卷的所有段落在同一个会话里；
+- 同一套试卷的多个分段**共享已出答案**，后一段不会重新识别前面已定的题；
+- 同一试卷内**串行处理**（按入队 seq），不会两个分段同时抢一个会话；
+- 不同试卷之间可以并行，互不阻塞。
+
+### 接口
+
+```http
+POST /api/units?taskMode=segment&paperId=paper-1&mode=single
+X-Unit-Kind: image            # image | video-segment
+X-Unit-Name-B64: <base64>     # 文件名
+X-Unit-Mode: single           # batch | single | video（调度时机）
+X-Unit-Task-Mode: segment     # whole | segment（任务模式）
+X-Unit-Paper: paper-1         # 试卷标识，不传默认 default
+```
+
+响应带 `hash / seq / paperId / taskMode / session / resultUrl / paperUrl`。
+
+```http
+GET  /api/papers/{paperId}    # 这套卷累积的答案 + 所有分段
+GET  /api/units               # 队列摘要
+GET  /api/mode                # 当前模式、可选模式、两个会话槽位
+POST /api/mode {"mode":"single"} 或 {"taskMode":"segment"}
+POST /api/units/flush?paperId=paper-1
+```
+
+### 配置两个会话
+
+```cmd
+set VIDEOQUIZ_WHOLE_SESSION_ID=session-xxx     :: 整段模式
+set VIDEOQUIZ_SEGMENT_SESSION_ID=session-yyy   :: 分段模式（同一套卷的所有段都进这里）
+```
+
+两者都没配时回落到 `VIDEOQUIZ_TARGET_SESSION_ID`，此时启动会打一条 warn（因为整段和分段会混在一起）。
+
 ## 九、常见问题
 
 **手机测试连接失败**
