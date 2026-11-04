@@ -763,6 +763,19 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { ok: true, paper, units });
     }
 
+    // 给试卷改名：手机端用来区分不同套卷
+    if (req.method === 'POST' && paperMatch) {
+      let payload;
+      try {
+        payload = await readJsonBody(req, 4 * 1024);
+      } catch (error) {
+        return json(res, 400, { ok: false, code: 'BAD_JSON', message: error.message });
+      }
+      const paperId = decodeURIComponent(paperMatch[1]);
+      const paper = unitQueue.setPaperTitle(paperId, typeof payload?.title === 'string' ? payload.title : '');
+      return json(res, 200, { ok: true, paper });
+    }
+
     // 模式查询 / 切换（持久化到 units.json，跨重启保留）
     if (req.method === 'GET' && url.pathname === '/api/mode') {
       return json(res, 200, {

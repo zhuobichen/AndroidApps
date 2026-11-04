@@ -220,12 +220,13 @@ export class UnitQueue {
   readPaper(paperId) {
     const id = String(paperId || DEFAULT_PAPER_ID);
     const path = this.paperPath(id);
-    const empty = { paperId: id, createdAt: null, updatedAt: null, units: [], answers: {}, details: {}, notes: [] };
+    const empty = { paperId: id, title: null, createdAt: null, updatedAt: null, units: [], answers: {}, details: {}, notes: [] };
     if (!existsSync(path)) return empty;
     try {
       const parsed = JSON.parse(readFileSync(path, 'utf8'));
       return {
         paperId: id,
+        title: typeof parsed.title === 'string' && parsed.title.trim() !== '' ? parsed.title : null,
         createdAt: parsed.createdAt ?? null,
         updatedAt: parsed.updatedAt ?? null,
         units: Array.isArray(parsed.units) ? parsed.units : [],
@@ -242,6 +243,16 @@ export class UnitQueue {
     const path = this.paperPath(paper.paperId);
     mkdirSync(join(this.root, '_papers'), { recursive: true });
     writeJsonAtomic(path, paper);
+  }
+
+  /** 给试卷起名，方便在历史里区分。空标题等价于清掉名字。 */
+  setPaperTitle(paperId, title) {
+    const paper = this.readPaper(paperId);
+    const clean = String(title ?? '').trim().slice(0, 60);
+    paper.title = clean === '' ? null : clean;
+    paper.updatedAt = new Date().toISOString();
+    this.savePaper(paper);
+    return paper;
   }
 
   /**

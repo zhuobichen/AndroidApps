@@ -146,6 +146,7 @@ public class PaperActivity extends AppCompatActivity {
         scroll = findViewById(R.id.scroll);
 
         findViewById(R.id.toolbar).setOnClickListener(v -> finish());
+        tvPaper.setOnClickListener(v -> renamePaper());
         findViewById(R.id.btnTakePhoto).setOnClickListener(v -> takePhoto());
         findViewById(R.id.btnTakeVideo).setOnClickListener(v -> takeVideo());
         findViewById(R.id.btnAddVideo).setOnClickListener(v -> picker.launch(new String[]{"video/*"}));
@@ -187,6 +188,43 @@ public class PaperActivity extends AppCompatActivity {
         renderEmpty();
         toast("已换新卷，接着加的段会算到这套新卷上");
         refreshNow();
+    }
+
+    /** 给这套卷起名字，历史列表里好区分 */
+    private void renamePaper() {
+        final android.widget.EditText input = new android.widget.EditText(this);
+        String current = prefs.paperTitle();
+        input.setText(current == null || current.equals("未命名试卷") ? "" : current);
+        input.setHint("例如：大疆笔试·行测");
+        input.setSingleLine(true);
+        int pad = dp(20);
+        input.setPadding(pad, dp(12), pad, dp(12));
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("给这套卷起个名字")
+                .setView(input)
+                .setPositiveButton("保存", (d, w) -> {
+                    String name = input.getText().toString().trim();
+                    if (name.isEmpty()) name = "未命名试卷";
+                    final String finalName = name;
+                    prefs.setPaperTitle(finalName);
+                    tvPaper.setText("这套卷：" + finalName);
+                    lastRenderKey = "";
+                    // 同步到电脑，历史列表才看得到名字
+                    pool.execute(() -> {
+                        try {
+                            JSONObject body = new JSONObject();
+                            body.put("title", finalName);
+                            bridgeRequest("POST", "/api/papers/" + Uri.encode(prefs.paperId()),
+                                    body.toString(), "application/json", 15000);
+                        } catch (Throwable ignored) {
+                            // 同步失败不影响本地显示
+                        }
+                    });
+                    toast("已改名：" + finalName);
+                })
+                .setNegativeButton("取消", null)
+                .show();
     }
 
     // ── 上传一段/一张 ─────────────────────────────────────────────
@@ -411,6 +449,27 @@ public class PaperActivity extends AppCompatActivity {
         return new JSONObject(body);
     }
 
+    /** 带 JSON body 的 POST；失败抛异常，调用方自己决定是否提示 */
+    private JSONObject bridgeRequest(String method, String path, String body, String contentType, int timeout) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(prefs.bridgeUrl() + path).openConnection();
+        c.setRequestMethod(method);
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(timeout == 0 ? 30000 : timeout);
+        c.setRequestProperty("Authorization", "Bearer " + prefs.bridgeToken());
+        if (body != null) {
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", contentType == null ? "application/json" : contentType);
+            try (OutputStream out = c.getOutputStream()) {
+                out.write(body.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+        int code = c.getResponseCode();
+        String response = readBody(c, code);
+        c.disconnect();
+        if (code != 200) throw new IllegalStateException("电脑返回 " + code + "：" + response);
+        return new JSONObject(response);
+    }
+
     private String readBody(HttpURLConnection c, int code) throws Exception {
         InputStream stream = code >= 400 ? c.getErrorStream() : c.getInputStream();
         if (stream == null) return "";
@@ -449,7 +508,13 @@ public class PaperActivity extends AppCompatActivity {
             }
             int answerCount = answers == null ? 0 : answers.length();
 
-            tvPaper.setText("这套卷：" + prefs.paperTitle());
+            // 标题优先用电脑端存的（换手机/重装也能显示），没有再退回本地
+            String paperTitle = paper == null ? "" : paper.optString("title", "");
+            if (paperTitle.isEmpty()) paperTitle = prefs.paperTitle();
+            if (paperTitle == null || paperTitle.isEmpty()) paperTitle = "未命名试卷";
+            if (!paperTitle.equals(prefs.paperTitle())) prefs.setPaperTitle(paperTitle);
+
+            tvPaper.setText("这套卷：" + paperTitle);
             StringBuilder summary = new StringBuilder();
             if (totalUnits == 0) {
                 summary.append("还没有分段。每加一段，这一段的答案会直接出现在下面。");
@@ -605,8 +670,10 @@ public class PaperActivity extends AppCompatActivity {
                         String updated = item.optString("updatedAt", "");
                         if (updated.length() >= 16) updated = updated.substring(5, 16).replace('T', ' ');
                         String mark = id.equals(prefs.paperId()) ? " ← 当前" : "";
+                        String name = item.optString("title", "");
+                        if (name == null || name.isEmpty()) name = id.replace("paper-", "");
                         ids.add(id);
-                        labels.add(id.replace("paper-", "") + "　" + units + " 段 / " + answers + " 题　" + updated + mark);
+                        labels.add(name + "　" + units + " 段 / " + answers + " 题　" + updated + mark);
                     }
                 }
                 ui.post(() -> {
