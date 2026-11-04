@@ -95,6 +95,45 @@ public class PaperActivity extends AppCompatActivity {
                 });
             });
 
+    /** 系统相机录的一段，录完直接当成这一套卷的一段视频上传 */
+    private File pendingVideoFile;
+    private Uri pendingVideoUri;
+
+    private final ActivityResultLauncher<Intent> videoLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+                File clip = pendingVideoFile;
+                pendingVideoFile = null;
+                pendingVideoUri = null;
+                if (result.getResultCode() != RESULT_OK) return;
+
+                // 正常情况相机把录像写进指定文件；个别 ROM 不认 EXTRA_OUTPUT，
+                // 就退回从 result 里取 URI 再复制一份。
+                if (clip == null || !clip.isFile() || clip.length() < 10 * 1024) {
+                    Uri uri = result.getData() == null ? null : result.getData().getData();
+                    if (uri == null) {
+                        toast("没有拿到录像，改用「加一段视频」选文件");
+                        return;
+                    }
+                    try {
+                        clip = copyToCache(uri, "clip_" + System.currentTimeMillis() + ".mp4");
+                    } catch (Throwable e) {
+                        toast("读取录像失败：" + (e.getMessage() == null ? e.toString() : e.getMessage()));
+                        return;
+                    }
+                }
+
+                final File upload = clip;
+                uploading = true;
+                tvSummary.setText("正在上传 " + upload.getName() + "…");
+                pool.execute(() -> {
+                    try {
+                        doUpload(upload, upload.getName(), "video-segment");
+                    } finally {
+                        upload.delete();
+                    }
+                });
+            });
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -108,6 +147,7 @@ public class PaperActivity extends AppCompatActivity {
 
         findViewById(R.id.toolbar).setOnClickListener(v -> finish());
         findViewById(R.id.btnTakePhoto).setOnClickListener(v -> takePhoto());
+        findViewById(R.id.btnTakeVideo).setOnClickListener(v -> takeVideo());
         findViewById(R.id.btnAddVideo).setOnClickListener(v -> picker.launch(new String[]{"video/*"}));
         findViewById(R.id.btnAddPhoto).setOnClickListener(v -> picker.launch(new String[]{"image/*"}));
         findViewById(R.id.btnNewPaper).setOnClickListener(v -> startNewPaper());
@@ -198,6 +238,36 @@ public class PaperActivity extends AppCompatActivity {
             pendingShotFile = null;
             pendingShotUri = null;
             toast("打开相机失败：" + (e.getMessage() == null ? e.toString() : e.getMessage()));
+        }
+    }
+
+
+    /** 打开系统相机录一段，录完直接上传成这套卷的一段视频 */
+    private void takeVideo() {
+        if (!canUpload()) return;
+        try {
+            File dir = new File(getExternalFilesDir(null), "shots");
+            if (!dir.exists() && !dir.mkdirs()) throw new IllegalStateException("无法创建录像目录");
+
+            pendingVideoFile = new File(dir, "clip_" + System.currentTimeMillis() + ".mp4");
+            pendingVideoUri = FileProvider.getUriForFile(this,
+                    getPackageName() + ".fileprovider", pendingVideoFile);
+
+            Intent intent = new Intent(android.provider.MediaStore.ACTION_VIDEO_CAPTURE);
+            intent.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, pendingVideoUri);
+            intent.putExtra(android.provider.MediaStore.EXTRA_VIDEO_QUALITY, 1);
+            intent.putExtra(android.provider.MediaStore.EXTRA_DURATION_LIMIT, 300);
+            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            if (intent.resolveActivity(getPackageManager()) == null) {
+                toast("这台手机没有可用的录像应用");
+                return;
+            }
+            videoLauncher.launch(intent);
+        } catch (Throwable e) {
+            pendingVideoFile = null;
+            pendingVideoUri = null;
+            toast("打开录像失败：" + (e.getMessage() == null ? e.toString() : e.getMessage()));
         }
     }
 
@@ -441,6 +511,7 @@ public class PaperActivity extends AppCompatActivity {
         answerView.setTextSize(15);
         answerView.setTextColor(0xFF1F1F1F);
         answerView.setLineSpacing(dp(4), 1f);
+        answerView.setTextIsSelectable(true);   // 长按可选中、复制
         box.addView(answerView);
 
         String extra = detail == null ? "" : detail.trim();
@@ -465,6 +536,7 @@ public class PaperActivity extends AppCompatActivity {
         detailView.setTextSize(13);
         detailView.setTextColor(0xFF555555);
         detailView.setLineSpacing(dp(3), 1f);
+        detailView.setTextIsSelectable(true);   // 解析也能选中复制
         detailView.setVisibility(View.GONE);
         LinearLayout.LayoutParams detailLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -596,6 +668,7 @@ public class PaperActivity extends AppCompatActivity {
         row.setTextSize(14);
         row.setTextColor(0xFF1F1F1F);
         row.setLineSpacing(dp(4), 1f);
+        row.setTextIsSelectable(true);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.bottomMargin = dp(8);

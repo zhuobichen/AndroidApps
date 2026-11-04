@@ -40,17 +40,38 @@
             android:textColor="@color/onSurfaceVariant"
             android:textSize="13sp" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnTakePhoto"
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="52dp"
+            android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:maxLines="1"
-            android:text="拍一张（用相机）"
-            android:textSize="15sp"
-            app:cornerRadius="16dp" />
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnTakePhoto"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_weight="1"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:text="拍一张"
+                android:textSize="15sp"
+                app:cornerRadius="16dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnTakeVideo"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:text="录一段"
+                android:textSize="15sp"
+                app:cornerRadius="16dp" />
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"

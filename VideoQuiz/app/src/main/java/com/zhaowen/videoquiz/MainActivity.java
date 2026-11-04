@@ -114,6 +114,8 @@ public class MainActivity extends AppCompatActivity {
         tvPhase = findViewById(R.id.tvPhase);
         tvEndpoint = findViewById(R.id.tvEndpoint);
         progress = findViewById(R.id.progress);
+        // 结果要能长按选中、复制
+        if (tvResult != null) tvResult.setTextIsSelectable(true);
 
         findViewById(R.id.btnPick).setOnClickListener(v -> picker.launch(new String[]{"video/*"}));
         findViewById(R.id.btnShot).setOnClickListener(v -> takeShot());
