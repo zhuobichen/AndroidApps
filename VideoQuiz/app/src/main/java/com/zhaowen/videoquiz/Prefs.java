@@ -74,6 +74,36 @@ public class Prefs {
     public void setShotJobId(String id) {
         sp.edit().putString("shotJobId", id == null ? "" : id).apply();
     }
+
+    /**
+     * 分段模式当前这套试卷的标识。
+     * 同一套卷的每一次「加一段」都带同一个 paperId，电脑端据此共享上下文与已出答案。
+     */
+    public String paperId() {
+        return sp.getString("paperId", "");
+    }
+
+    public void setPaperId(String id) {
+        sp.edit().putString("paperId", id == null ? "" : id).apply();
+    }
+
+    /** 分段模式的显示标题，方便用户认出这是哪套卷。 */
+    public String paperTitle() {
+        return sp.getString("paperTitle", "");
+    }
+
+    public void setPaperTitle(String title) {
+        sp.edit().putString("paperTitle", title == null ? "" : title).apply();
+    }
+
+    /** 边做边看：每段出结果就刷新到手机上（练习/模拟考场景）。关掉则只在全部完成后看。 */
+    public boolean paperLiveUpdate() {
+        return sp.getBoolean("paperLiveUpdate", true);
+    }
+
+    public void setPaperLiveUpdate(boolean on) {
+        sp.edit().putBoolean("paperLiveUpdate", on).apply();
+    }
     /** 上传完是否立刻派发任务。默认 false：必须由用户点「开始处理」确认。 */
     public boolean bridgeAutoDispatch() {
         return sp.getBoolean("bridgeAutoConfirm", false);

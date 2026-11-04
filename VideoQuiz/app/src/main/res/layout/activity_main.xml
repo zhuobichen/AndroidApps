@@ -45,6 +45,21 @@
         </LinearLayout>
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnPaper"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:layout_marginEnd="6dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minWidth="0dp"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="分段"
+            android:textSize="13sp"
+            app:cornerRadius="19dp" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnTasks"
             style="@style/Widget.Material3.Button.TonalButton"
             android:layout_width="wrap_content"

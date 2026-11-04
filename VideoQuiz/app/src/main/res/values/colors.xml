@@ -12,4 +12,7 @@
     <color name="warning">#C77700</color>
     <color name="danger">#C5372C</color>
     <color name="divider">#E4E8F0</color>
+    <color name="onSurface">#1F1F1F</color>
+    <color name="onSurfaceVariant">#6B6B6B</color>
+    <color name="outlineVariant">#E2E6EE</color>
 </resources>

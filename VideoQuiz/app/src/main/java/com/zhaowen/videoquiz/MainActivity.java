@@ -124,6 +124,8 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btnDispatch).setOnClickListener(v -> dispatchPending());
         findViewById(R.id.btnTasks).setOnClickListener(v ->
                 startActivity(new Intent(this, TaskActivity.class)));
+        findViewById(R.id.btnPaper).setOnClickListener(v ->
+                startActivity(new Intent(this, PaperActivity.class)));
         findViewById(R.id.btnHistory).setOnClickListener(v -> showHistory());
         findViewById(R.id.btnOpenChat).setOnClickListener(v -> openChatActivity());
 

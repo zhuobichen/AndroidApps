@@ -1,0 +1,400 @@
+package com.zhaowen.videoquiz;
+
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.OpenableColumns;
+import android.util.Base64;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.activity.result.contract.ActivityResultContracts;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/**
+ * 分段识别页。
+ *
+ * 一套卷可以分多次提交：每次「加一段视频」或「加一张照片」，电脑端会把它当成同一套试卷的
+ * 新一段处理，已出的答案会累积在试卷上，后面的段不会重复识别前面已定的题。
+ *
+ * 与整卷模式的区别只在这里：走 /api/units（带 taskMode=segment 和同一个 paperId），
+ * 而不是 /api/jobs。
+ */
+public class PaperActivity extends AppCompatActivity {
+
+    private Prefs prefs;
+    private final Handler ui = new Handler(Looper.getMainLooper());
+    private final ExecutorService pool = Executors.newSingleThreadExecutor();
+
+    private TextView tvPaper;
+    private TextView tvSummary;
+    private LinearLayout answerList;
+    private ScrollView scroll;
+
+    private volatile boolean polling = true;
+    private volatile boolean uploading = false;
+    private String lastRenderKey = "";
+
+    private final ActivityResultLauncher<String[]> picker =
+            registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> {
+                if (uri == null) return;
+                uploadPicked(uri);
+            });
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_paper);
+
+        prefs = new Prefs(this);
+        tvPaper = findViewById(R.id.tvPaper);
+        tvSummary = findViewById(R.id.tvSummary);
+        answerList = findViewById(R.id.answerList);
+        scroll = findViewById(R.id.scroll);
+
+        findViewById(R.id.toolbar).setOnClickListener(v -> finish());
+        findViewById(R.id.btnAddVideo).setOnClickListener(v -> picker.launch(new String[]{"video/*"}));
+        findViewById(R.id.btnAddPhoto).setOnClickListener(v -> picker.launch(new String[]{"image/*"}));
+        findViewById(R.id.btnNewPaper).setOnClickListener(v -> startNewPaper());
+        findViewById(R.id.btnRefresh).setOnClickListener(v -> {
+            lastRenderKey = "";
+            refreshNow();
+        });
+
+        ensurePaper();
+        renderEmpty();
+        startPolling();
+    }
+
+    @Override
+    protected void onDestroy() {
+        polling = false;
+        pool.shutdownNow();
+        super.onDestroy();
+    }
+
+    // ── 试卷标识 ──────────────────────────────────────────────────
+
+    private void ensurePaper() {
+        if (prefs.paperId() == null || prefs.paperId().isEmpty()) {
+            String id = "paper-" + UUID.randomUUID().toString().substring(0, 8);
+            prefs.setPaperId(id);
+            prefs.setPaperTitle("未命名试卷");
+        }
+        if (prefs.paperTitle() == null || prefs.paperTitle().isEmpty()) {
+            prefs.setPaperTitle("未命名试卷");
+        }
+    }
+
+    private void startNewPaper() {
+        String id = "paper-" + UUID.randomUUID().toString().substring(0, 8);
+        prefs.setPaperId(id);
+        prefs.setPaperTitle("未命名试卷");
+        lastRenderKey = "";
+        renderEmpty();
+        toast("已换新卷，接着加的段会算到这套新卷上");
+        refreshNow();
+    }
+
+    // ── 上传一段/一张 ─────────────────────────────────────────────
+
+    private void uploadPicked(Uri uri) {
+        if (uploading) {
+            toast("上一段还在上传，等它传完");
+            return;
+        }
+        if (!prefs.bridgeMode() || prefs.bridgeUrl().isEmpty()) {
+            toast("先在设置里切到「电脑 Harness」并填好地址");
+            return;
+        }
+
+        String name = displayName(uri);
+        String kind = name.toLowerCase().matches(".*\\.(mp4|mov|m4v|mkv|webm|avi|3gp|mpeg|mpg)$")
+                ? "video-segment" : "image";
+
+        uploading = true;
+        tvSummary.setText("正在上传 " + name + "…");
+
+        pool.execute(() -> {
+            File staged = null;
+            try {
+                staged = copyToCache(uri, name);
+                JSONObject result = uploadUnit(staged, name, kind);
+                final String hash = result.optString("hash", "");
+                final int seq = result.optInt("seq", 0);
+                ui.post(() -> {
+                    uploading = false;
+                    toast("第 " + seq + " 段已交给电脑，正在识别");
+                    lastRenderKey = "";
+                });
+                // 上传成功后立刻拉一次，让状态先出现
+                refreshNow();
+            } catch (Throwable e) {
+                final String message = e.getMessage() == null ? e.toString() : e.getMessage();
+                ui.post(() -> {
+                    uploading = false;
+                    tvSummary.setText("上传失败：" + message);
+                });
+            } finally {
+                if (staged != null) staged.delete();
+            }
+        });
+    }
+
+    private File copyToCache(Uri uri, String name) throws Exception {
+        String safe = name.replaceAll("[^A-Za-z0-9._-]", "_");
+        File target = new File(getCacheDir(), "unit-" + System.currentTimeMillis() + "-" + safe);
+        try (InputStream in = getContentResolver().openInputStream(uri);
+             OutputStream out = new FileOutputStream(target)) {
+            if (in == null) throw new IllegalStateException("打不开这个文件");
+            byte[] buffer = new byte[128 * 1024];
+            int n;
+            while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+        }
+        return target;
+    }
+
+    private String displayName(Uri uri) {
+        try (android.database.Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (index >= 0) {
+                    String value = cursor.getString(index);
+                    if (value != null && !value.isEmpty()) return value;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        String fallback = uri.getLastPathSegment();
+        return fallback == null ? "unit.bin" : fallback;
+    }
+
+    /** POST /api/units?taskMode=segment&paperId=xxx&mode=single —— 到货即处理 */
+    private JSONObject uploadUnit(File file, String name, String kind) throws Exception {
+        String paper = prefs.paperId();
+        String encodedName = Base64.encodeToString(name.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+        String path = "/api/units?taskMode=segment&paperId=" + Uri.encode(paper) + "&mode=single";
+
+        HttpURLConnection c = (HttpURLConnection) new URL(prefs.bridgeUrl() + path).openConnection();
+        c.setRequestMethod("POST");
+        c.setConnectTimeout(20000);
+        c.setReadTimeout(180000);
+        c.setDoOutput(true);
+        c.setFixedLengthStreamingMode(file.length());
+        c.setRequestProperty("Authorization", "Bearer " + prefs.bridgeToken());
+        c.setRequestProperty("Content-Type", "application/octet-stream");
+        c.setRequestProperty("X-Unit-Kind", kind);
+        c.setRequestProperty("X-Unit-Name-B64", encodedName);
+        c.setRequestProperty("X-Unit-Paper", paper);
+
+        try (InputStream in = new java.io.FileInputStream(file);
+             OutputStream out = c.getOutputStream()) {
+            byte[] buffer = new byte[128 * 1024];
+            int n;
+            while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+        }
+
+        int code = c.getResponseCode();
+        String body = readBody(c, code);
+        c.disconnect();
+        if (code != 200 && code != 202) throw new IllegalStateException("电脑返回 " + code + "：" + body);
+        return body.isEmpty() ? new JSONObject() : new JSONObject(body);
+    }
+
+    // ── 轮询与渲染 ───────────────────────────────────────────────
+
+    private void startPolling() {
+        ui.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (!polling) return;
+                refreshNow();
+                ui.postDelayed(this, 4000);
+            }
+        }, 800);
+    }
+
+    private void refreshNow() {
+        final String paper = prefs.paperId();
+        if (paper == null || paper.isEmpty()) return;
+        pool.execute(() -> {
+            try {
+                JSONObject data = bridgeGet("/api/papers/" + Uri.encode(paper));
+                ui.post(() -> render(data));
+            } catch (Throwable ignored) {
+                // 网络抖动不打扰用户，下一轮再试
+            }
+        });
+    }
+
+    private JSONObject bridgeGet(String path) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(prefs.bridgeUrl() + path).openConnection();
+        c.setRequestMethod("GET");
+        c.setConnectTimeout(10000);
+        c.setReadTimeout(20000);
+        c.setRequestProperty("Authorization", "Bearer " + prefs.bridgeToken());
+        int code = c.getResponseCode();
+        String body = readBody(c, code);
+        c.disconnect();
+        if (code != 200) throw new IllegalStateException("电脑返回 " + code);
+        return new JSONObject(body);
+    }
+
+    private String readBody(HttpURLConnection c, int code) throws Exception {
+        InputStream stream = code >= 400 ? c.getErrorStream() : c.getInputStream();
+        if (stream == null) return "";
+        try (InputStream in = stream; java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int n;
+            while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+            return new String(out.toByteArray(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private void renderEmpty() {
+        tvPaper.setText("这套卷：" + prefs.paperTitle());
+        tvSummary.setText("还没有分段。每加一段，这一段的答案会直接出现在下面。");
+        answerList.removeAllViews();
+    }
+
+    private void render(JSONObject data) {
+        try {
+            JSONObject paper = data.optJSONObject("paper");
+            JSONArray units = data.optJSONArray("units");
+            JSONObject answers = paper == null ? null : paper.optJSONObject("answers");
+
+            int totalUnits = units == null ? 0 : units.length();
+            int doneUnits = 0;
+            int failedUnits = 0;
+            if (units != null) {
+                for (int i = 0; i < units.length(); i++) {
+                    String status = units.optJSONObject(i).optString("status", "");
+                    if ("done".equals(status)) doneUnits++;
+                    if ("failed".equals(status)) failedUnits++;
+                }
+            }
+            int answerCount = answers == null ? 0 : answers.length();
+
+            tvPaper.setText("这套卷：" + prefs.paperTitle());
+            StringBuilder summary = new StringBuilder();
+            if (totalUnits == 0) {
+                summary.append("还没有分段。每加一段，这一段的答案会直接出现在下面。");
+            } else {
+                summary.append("已完成 ").append(doneUnits).append("/").append(totalUnits).append(" 段");
+                if (failedUnits > 0) summary.append("（").append(failedUnits).append(" 段失败）");
+                summary.append(" · 累计 ").append(answerCount).append(" 题");
+            }
+            tvSummary.setText(summary.toString());
+
+            // 内容没变就不重绘，避免滚动位置被打回去
+            String key = doneUnits + "/" + totalUnits + "#" + answerCount + "#" + (units == null ? 0 : units.toString().hashCode());
+            if (key.equals(lastRenderKey)) return;
+            lastRenderKey = key;
+
+            answerList.removeAllViews();
+
+            // 段状态
+            if (units != null && units.length() > 0) {
+                addSectionTitle("分段进度");
+                for (int i = 0; i < units.length(); i++) {
+                    JSONObject unit = units.optJSONObject(i);
+                    int seq = unit.optInt("seq", i + 1);
+                    String status = unit.optString("status", "");
+                    String kind = "image".equals(unit.optString("kind")) ? "照片" : "视频";
+                    String label = "第 " + seq + " 段 · " + kind + " · " + statusText(status);
+                    TextView row = addRow(label, "failed".equals(status) ? unit.optString("error", "") : "");
+                    if (!"done".equals(status)) row.setTextColor(0xFF8A8A8A);
+                }
+            }
+
+            // 累积答案
+            if (answerCount > 0) {
+                addSectionTitle("已出答案（" + answerCount + " 题）");
+                List<String> ids = new ArrayList<>();
+                for (Iterator<String> it = answers.keys(); it.hasNext(); ) ids.add(it.next());
+                Collections.sort(ids, (a, b) -> {
+                    try {
+                        return Integer.compare(Integer.parseInt(a.replaceAll("\\D", "")), Integer.parseInt(b.replaceAll("\\D", "")));
+                    } catch (Throwable e) {
+                        return a.compareTo(b);
+                    }
+                });
+                for (String id : ids) {
+                    addRow("第 " + id + " 题", answers.optString(id, ""));
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private String statusText(String status) {
+        switch (status == null ? "" : status) {
+            case "done": return "已完成";
+            case "running": return "识别中";
+            case "failed": return "失败";
+            case "pending": return "排队中";
+            default: return status;
+        }
+    }
+
+    private void addSectionTitle(String text) {
+        TextView title = new TextView(this);
+        title.setText(text);
+        title.setTextSize(13);
+        title.setTextColor(0xFF6B6B6B);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(16);
+        lp.bottomMargin = dp(6);
+        title.setLayoutParams(lp);
+        answerList.addView(title);
+    }
+
+    private TextView addRow(String left, String right) {
+        TextView row = new TextView(this);
+        String text = right == null || right.isEmpty() ? left : left + "　" + right;
+        row.setText(text);
+        row.setTextSize(14);
+        row.setTextColor(0xFF1F1F1F);
+        row.setLineSpacing(dp(4), 1f);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = dp(8);
+        row.setLayoutParams(lp);
+        answerList.addView(row);
+        return row;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private void toast(String text) {
+        Toast.makeText(this, text, Toast.LENGTH_SHORT).show();
+    }
+}
