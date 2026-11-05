@@ -16,12 +16,12 @@
         android:label="MapMate"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:usesCleartextTraffic="true"
+        android:usesCleartextTraffic="false"
         android:theme="@style/Theme.MapMate">
 
         <meta-data
             android:name="com.amap.api.v2.apikey"
-            android:value="dae386aec0e85eb9039f63e78a67a475" />
+            android:value="${AMAP_KEY}" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
