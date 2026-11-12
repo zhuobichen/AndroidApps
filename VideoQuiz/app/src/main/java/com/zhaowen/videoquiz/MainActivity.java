@@ -1434,12 +1434,66 @@ public class MainActivity extends AppCompatActivity {
 
     // ---------- PDF ----------
 
+    /** 结果只有 txt 时，直接读出来贴到结果区（可长按复制），不用跳出去 */
+    private void showTextResult(ArrayList<File> texts) {
+        if (texts.isEmpty()) return;
+        if (texts.size() == 1) {
+            displayTextFile(texts.get(0));
+            return;
+        }
+        String[] labels = new String[texts.size()];
+        for (int i = 0; i < texts.size(); i++) labels[i] = texts.get(i).getName();
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("查看哪一份")
+                .setItems(labels, (d, which) -> displayTextFile(texts.get(which)))
+                .show();
+    }
+
+    private void displayTextFile(File file) {
+        new Thread(() -> {
+            try {
+                long size = file.length();
+                String content;
+                if (size > 512 * 1024) {
+                    // 超大文本只读前 512KB，避免把界面卡死
+                    try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(file, "r")) {
+                        byte[] buf = new byte[512 * 1024];
+                        int n = raf.read(buf);
+                        content = new String(buf, 0, Math.max(n, 0), java.nio.charset.StandardCharsets.UTF_8)
+                                + "\n\n…（文件 " + formatBytes(size) + "，这里只显示前 512KB）";
+                    }
+                } else {
+                    content = new String(java.nio.file.Files.readAllBytes(file.toPath()),
+                            java.nio.charset.StandardCharsets.UTF_8);
+                }
+                final String shown = content;
+                ui.post(() -> {
+                    tvResult.setText(shown);
+                    status("已打开 " + file.getName() + "（长按可复制）");
+                });
+            } catch (Throwable e) {
+                final String message = "读取失败：" + (e.getMessage() == null ? e.toString() : e.getMessage());
+                ui.post(() -> status(message));
+            }
+        }, "read-text").start();
+    }
+
     private void makePdf() {
         if (prefs.bridgeMode() && !bridgeFiles.isEmpty()) {
             // 收集所有 PDF：完整版 + 答案速查版
             ArrayList<File> pdfs = new ArrayList<>();
+            ArrayList<File> texts = new ArrayList<>();
             for (File file : bridgeFiles) {
-                if (file.getName().toLowerCase().endsWith(".pdf") && file.isFile()) pdfs.add(file);
+                String lower = file.getName().toLowerCase();
+                if (!file.isFile()) continue;
+                if (lower.endsWith(".pdf")) pdfs.add(file);
+                else if (lower.endsWith(".txt")) texts.add(file);
+            }
+
+            // 默认只回 txt：直接读出来显示，省得跳出 App
+            if (pdfs.isEmpty() && !texts.isEmpty()) {
+                showTextResult(texts);
+                return;
             }
 
             if (pdfs.size() == 1) {
@@ -1907,8 +1961,8 @@ public class MainActivity extends AppCompatActivity {
                     pdfBtn.setVisibility(bridgeFiles.isEmpty() ? View.GONE : View.VISIBLE);
                     pdfBtn.setEnabled(!bridgeFiles.isEmpty());
                     phase("已恢复历史结果");
-                    status(reuseCount > 0 ? "结果已在本机（复用 " + reuseCount + " 个文件），可打开 PDF 或继续追问"
-                            : "结果已下载，可打开 PDF 或继续追问");
+                    status(reuseCount > 0 ? "结果已在本机（复用 " + reuseCount + " 个文件），可查看或继续追问"
+                            : "结果已下载，可查看结果或继续追问");
                 });
                 showChatFor(id);
                 status("已下载 " + bridgeFiles.size() + " 个文件");

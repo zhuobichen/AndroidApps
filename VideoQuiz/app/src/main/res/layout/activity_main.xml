@@ -272,7 +272,7 @@
                     android:enabled="false"
                     android:insetTop="0dp"
                     android:insetBottom="0dp"
-                    android:text="打开 PDF"
+                    android:text="查看结果"
                     android:textSize="13sp"
                     android:visibility="gone"
                     app:cornerRadius="15dp" />

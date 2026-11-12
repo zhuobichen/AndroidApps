@@ -82,7 +82,9 @@ async function dispatchUnit(unit) {
     '1) 先看下面「已出答案」，这些题已定稿，不要重新识别，也不要改答案；',
     '2) 只处理本段新出现的题目，增量追加；',
     '3) 若本段原文更清晰、与已出答案冲突，以本段为准，并在 notes 里写明改了哪题、为什么；',
-    '4) 题目可能跨段（上一段题干、这一段选项），跨段时以本段为准补齐。',
+    '4) 题目可能跨段（上一段题干、这一段选项），跨段时以本段为准补齐；',
+    '5) 拿不准的事实（成语典故出处、文言实词义项、时政事件、专有名词、翻译选词、公式常数等）允许联网搜索/抓取网页核实后再作答，不要凭记忆硬猜；',
+    '6) 只要用了外部资料，就在 detail 里写明依据（如“据 XX 词典/官方通报”），并在 notes 里说明哪题是这样定的，方便复核。',
     '',
     priorIds.length
       ? `已出答案（${priorIds.length} 题）：\n${priorLines}`
@@ -601,7 +603,7 @@ async function sendToSession(id, job, options = {}) {
       `  & "${join(here, 'task.ps1')}" -Operation ask-jev -BaseUrl "${completionUrl}" -Id "${id}"`,
       `它返回 JSON：answered 是判定模型给出且置信度达标的答案（直接采用，不要重新推理），unresolved 是它也没把握的题号（这些由你自己解），skippedFigure 是被跳过的图形题数量。如果这条命令报错（比如没配置判定模型），就把所有题都自己解，并在结果摘要里说明。`,
       `第 3 步：answered 里的题直接抄它的答案；unresolved 里的题、所有 blank/essay、needsFigure=true 的题，由你自己认真解。`,
-      `第 4 步：合并成 answers.pdf（完整版，题目+答案）、answers_only.pdf（速查版，只列题号与答案）和 answers.txt；然后运行 task.ps1：Operation=complete、BaseUrl=${completionUrl}、Id=${id}、Text=结果摘要（要写明判定模型覆盖了多少题、你自己解了多少题）、FilesJson='[{"name":"answers.pdf","mimeType":"application/pdf"},{"name":"answers_only.pdf","mimeType":"application/pdf"},{"name":"answers.txt","mimeType":"text/plain"}]'。脚本自行读取本机 token.txt，禁止读取/展示/写入对话。不要改写视频源文件。`,
+      `第 4 步：把结果写成 answers.txt（纯文本：先一段「结果摘要」，再逐题列「题号. 答案」，主观题给要点即可）。默认只需要 txt，不要生成 PDF；只有用户当次明确说「要 PDF」才额外出 answers.pdf / answers_only.pdf。然后运行 task.ps1：Operation=complete、BaseUrl=${completionUrl}、Id=${id}、Text=结果摘要（要写明判定模型覆盖了多少题、你自己解了多少题）、FilesJson='[{"name":"answers.txt","mimeType":"text/plain"}]'。脚本自行读取本机 token.txt，禁止读取/展示/写入对话。不要改写视频源文件。`,
       `进度上报（可选但推荐）：每完成一个阶段可运行 task.ps1 -Operation progress -BaseUrl ${completionUrl} -Id ${id} -Text "现在做到哪一步"，手机端会实时显示。`,
     ].join('\n');
 
@@ -979,7 +981,7 @@ const server = createServer(async (req, res) => {
           ...(wantedSession === '' ? {} : { targetSessionId: wantedSession }),
           task: String(req.headers['x-videoquiz-task-b64']
             ? Buffer.from(String(req.headers['x-videoquiz-task-b64']), 'base64').toString('utf8')
-            : (req.headers['x-videoquiz-task'] || '转录视频中的试题，保留公式与题号；生成试卷 PDF 和答案 PDF，并说明识别不确定处。')).slice(0, 2000),
+            : (req.headers['x-videoquiz-task'] || '转录视频中的试题，保留公式与题号；结果写成 answers.txt，并说明识别不确定处。')).slice(0, 2000),
           createdAt: new Date().toISOString(),
           status: 'uploaded',
         };
