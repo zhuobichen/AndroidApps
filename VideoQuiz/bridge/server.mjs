@@ -78,6 +78,10 @@ async function dispatchUnit(unit) {
       : `本次提交：整段模式（${kindLabel}，一次给出完整材料）`,
     `文件：${unitFilePath(unit)}`,
     '',
+    '【先自检：卷灵技能装了没】动手前花 5 秒确认 videoquiz-paper 技能在不在：',
+    `  a) 看你的可用技能列表里有没有 videoquiz-paper；b) 或检查 ${join(dshHome, 'skills', 'videoquiz-paper', 'SKILL.md')} 是否存在。`,
+    `  有：先读它，按里面的流程与红线干活。没有：把 ${join(here, 'skills', 'videoquiz-paper.md')} 复制到 ${join(dshHome, 'skills', 'videoquiz-paper', 'SKILL.md')}（建目录+复制），再读它干活。别问用户，这是本机自带文件。`,
+    '',
     '处理规则：',
     '1) 先看下面「已出答案」，这些题已定稿，不要重新识别，也不要改答案；',
     '2) 只处理本段新出现的题目，增量追加；',
@@ -185,6 +189,8 @@ const sessionsRoot = process.env.VIDEOQUIZ_SESSIONS_ROOT
 const anchorSessionId = process.env.VIDEOQUIZ_ANCHOR_SESSION || 'session-3b1e209a-14ac-4002-a31f-4efdc4f9064c';
 const workspacePath = process.env.VIDEOQUIZ_WORKSPACE || 'D:\\github_project\\ZhaoWen_GitHub维护';
 const workspaceStatePath = join(process.env.DSH_HOME || 'D:/github_project/ZhaoWen_GitHub维护/dsh/home', 'storages', 'workspace.json');
+/** DSH 主目录：技能装在 <dshHome>/skills/<名字>/SKILL.md。 */
+const dshHome = process.env.DSH_HOME || join(workspacePath, 'dsh', 'home');
 
 /**
  * 当前工作区的会话集合。
@@ -609,6 +615,13 @@ async function sendToSession(id, job, options = {}) {
       `本机桥接辅助脚本：${join(here, 'task.ps1')}`,
       `任务要求：${job.task}`,
       ``,
+      `【先自检：卷灵技能装了没】本次任务属于「视频成卷」，有一份配套技能 videoquiz-paper（读卷流水线 + 质量红线 + 答题规则）。动手前先花 5 秒确认：`,
+      `  a) 看你的可用技能列表里有没有 videoquiz-paper；`,
+      `  b) 或者检查这两个路径是否存在 —— "${join(dshHome ?? '', 'skills', 'videoquiz-paper', 'SKILL.md')}" / "${join(here, 'skills', 'videoquiz-paper.md')}"。`,
+      `  有：先读它，按里面的流程和红线干活，不要凭感觉重来一遍。`,
+      `  没有：把 "${join(here, 'skills', 'videoquiz-paper.md')}" 复制到 "${join(dshHome ?? '', 'skills', 'videoquiz-paper', 'SKILL.md')}"（建目录 + 复制文件），然后再读它干活。这一步不要跳过、也不要问用户——这是本机自带的配套文件，装上就能用。`,
+      `  如果两个路径都没有（桥接版本太旧），就在结果摘要里写明"未找到 videoquiz-paper 技能"，然后按下面【必须执行】的那段流程走。`,
+      ``,
       `【第 0 步：先 claim，立刻做，别做别的】运行 task.ps1 -Operation claim -BaseUrl ${completionUrl} -Id ${id}。不 claim 的话手机端一直显示「已投递」，用户会以为卡住了。claim 完再开始干活。`,
       `【关于帧去重，这条最影响速度】滚动录屏的相邻帧重叠 80% 以上，直接全量 OCR 是最大的时间浪费——实测 296 帧全量 OCR 花了 18 分钟，而真正不重复的页面只有 30-40 个。所以：`,
       `  - 帧数超过 200 的视频必须先完成位移去重，但方法选错会白跑：`,
@@ -626,7 +639,7 @@ async function sendToSession(id, job, options = {}) {
       `  a) 先把视频切页、定位出「不同页面」，每页截一张整页图存进 work/，之后就只读这些整页图；`,
       `  b) 每页最多读 1 次。切页完成后把原始帧图删掉，避免不自觉地回去逐帧核对——那是最费钱的坏习惯；`,
       `  c) 读图前把长边缩到 1000 像素。桥接目录已经备好缩放脚本，直接跑：python "${join(here, 'shrink.py')}" <图片目录> 1000 —— 它会生成 _small/ 子目录（实测 1920×1080 缩到 1000×562，体积省 77%，文字公式依然清晰）。读 _small/ 里的图，不要读原图；`,
-      `  d) OCR 直接调桥接目录的现成脚本：python "${join(here, 'ocr.py')}" <图片目录> --out <结果.json>。它优先走常驻服务（http://127.0.0.1:8766，约 100~400ms/帧），服务不可用时自动回退本地加载。`,
+      `  d) OCR 直接调桥接目录的现成脚本：python "${join(here, 'ocr.py')}" <图片目录> --out <结果.json>。它优先走常驻服务（当前 ${ocrUrl()}，约 100~400ms/帧），服务不可用时自动回退本地加载。**端口不一定是 8766**——8766 可能被别的程序占着，桥接会自动挪到 8767 及以后；以日志里 "ocr: 服务就绪 http://..." 那一行为准，不要自己猜端口。`,
       `  e) **不要自己启停 OCR 服务**。它是桥接拉起的独立进程，桥接会维护它；你去 kill 或重启只会让 CUDA 重新预热 50 秒。只需请求 /health 看 ready 和 busy 两个字段：busy=true 表示正在处理，等它就好，不要误判成卡死。`,
       `  f) **全帧 OCR 是最后手段，不是默认**。去重阶段已经覆盖了整卷内容时，就只 OCR 去重后的页面；只有在"去重后仍发现缺号、需要回补"或"重影严重需要多帧投票"时，才对缺失区间做补扫。整段视频全帧重扫一遍通常是浪费。`,
       `  g) 拿不准的段落用 OCR 文本 + 相邻页交叉验证，不要靠重复读图。`,
