@@ -266,14 +266,23 @@ const STALL_MINUTES = Number(process.env.VIDEOQUIZ_STALL_MINUTES || 45);
 const STARTUP_GRACE_MINUTES = 3;
 
 /** 常驻 OCR 服务：模型只加载一次、CUDA 只预热一次，省掉每次 50 秒冷启动。 */
-const ocrServerUrl = process.env.VIDEOQUIZ_OCR_SERVER || 'http://127.0.0.1:8766';
+// 端口可能被别的程序占用（本机 8766 曾被「个人管理」的 serve.py 长期占着，
+// 导致 OCR 服务静默起不来、每次都要回退慢速本地模型）。先探测可用端口。
+const ocrPortCandidates = (process.env.VIDEOQUIZ_OCR_PORT || '8766,8767,8768,8769,8770')
+  .split(',').map((x) => Number(String(x).trim())).filter((x) => Number.isInteger(x) && x > 0 && x < 65536);
+const ocrServerUrl = process.env.VIDEOQUIZ_OCR_SERVER || `http://127.0.0.1:${ocrPortCandidates[0]}`;
+let ocrChosenPort = null;
+/** 当前生效的 OCR 服务地址：优先用探测到的端口。 */
+function ocrUrl() {
+  return process.env.VIDEOQUIZ_OCR_SERVER || `http://127.0.0.1:${ocrChosenPort ?? ocrPortCandidates[0]}`;
+}
 let ocrChild = null;
 
 async function ocrServerReady(timeoutMs = 3000) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
-    const response = await fetch(`${ocrServerUrl}/health`, { signal: controller.signal });
+    const response = await fetch(`${ocrUrl()}/health`, { signal: controller.signal });
     clearTimeout(timer);
     if (!response.ok) return false;
     const data = await response.json();
@@ -285,7 +294,7 @@ async function ocrServerReady(timeoutMs = 3000) {
 
 async function ensureOcrServer() {
   if (await ocrServerReady()) {
-    console.log(`ocr: 复用已有服务 ${ocrServerUrl}`);
+    console.log(`ocr: 复用已有服务 ${ocrUrl()}`);
     return;
   }
 
@@ -296,7 +305,35 @@ async function ensureOcrServer() {
   }
 
   try {
-    ocrChild = spawn(process.env.VIDEOQUIZ_PYTHON || 'python', [script, '--port', '8766', '--cuda', 'auto'], {
+    // 挑一个真正空闲的端口：先看已有 OCR 服务，再看端口是否被占
+    if (ocrChosenPort === null) {
+      for (const port of ocrPortCandidates) {
+        const probeUrl = `http://127.0.0.1:${port}`;
+        try {
+          const ctrl = new AbortController();
+          const tm = setTimeout(() => ctrl.abort(), 1200);
+          const resp = await fetch(`${probeUrl}/health`, { signal: ctrl.signal });
+          clearTimeout(tm);
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data?.ready === true) {
+              ocrChosenPort = port;
+              console.log(`ocr: 复用端口 ${port} 上已在运行的服务`);
+              break;
+            }
+          }
+          continue; // 该端口有别的服务但不是 OCR，换下一个
+        } catch {
+          // 连不上 = 端口空闲，就用它
+          ocrChosenPort = port;
+          break;
+        }
+      }
+      if (ocrChosenPort === null) ocrChosenPort = ocrPortCandidates[0];
+    }
+    const effectiveUrl = process.env.VIDEOQUIZ_OCR_SERVER || `http://127.0.0.1:${ocrChosenPort}`;
+    console.log(`ocr: 使用端口 ${ocrChosenPort}`);
+    ocrChild = spawn(process.env.VIDEOQUIZ_PYTHON || 'python', [script, '--port', String(ocrChosenPort), '--cuda', 'auto'], {
       cwd: here,
       // detached：OCR 服务独立于桥接，桥接重启不会连带杀掉它，50 秒预热只付一次
       detached: true,
@@ -311,7 +348,7 @@ async function ensureOcrServer() {
     for (let i = 0; i < 40; i += 1) {
       await new Promise((resolve) => setTimeout(resolve, 3000));
       if (await ocrServerReady()) {
-        console.log(`ocr: 服务就绪 ${ocrServerUrl}`);
+        console.log(`ocr: 服务就绪 ${ocrUrl()}`);
         return;
       }
     }
