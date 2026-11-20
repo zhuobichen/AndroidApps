@@ -27,3 +27,10 @@ bridge/node_modules/
 
 # 资源里的图片必须入库（上面的 *.png 只针对根目录测试产物）
 !app/src/main/res/**/*.png
+
+# 本地整理资料（含真实试卷与作答记录，不进仓库）
+/局部资料/
+
+# Python 缓存
+__pycache__/
+*.pyc

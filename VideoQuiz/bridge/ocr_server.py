@@ -175,12 +175,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.startswith("/health"):
-            with _lock:
-                busy = _lock.locked() and False
+            # 注意：这里绝不能抢 _lock —— OCR 正在处理大请求时，
+            # 健康检查会被堵住，调用方会误判服务已死。
             self._send(200, {
                 "ok": _engine is not None,
                 "engine": _engine_kind,
                 "ready": _engine is not None,
+                "busy": _lock.locked(),
                 "uptime_s": round(time.time() - _started_at, 1),
                 "stats": dict(_stats),
             })
