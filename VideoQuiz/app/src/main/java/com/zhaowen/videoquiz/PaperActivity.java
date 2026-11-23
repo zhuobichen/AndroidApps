@@ -510,6 +510,8 @@ public class PaperActivity extends AppCompatActivity {
 
             // 标题优先用电脑端存的（换手机/重装也能显示），没有再退回本地
             String paperTitle = paper == null ? "" : paper.optString("title", "");
+            // Android 的 org.json 对 JSON null 会返回字符串 "null"，要当空处理
+            if (paperTitle == null || paperTitle.equals("null")) paperTitle = "";
             if (paperTitle.isEmpty()) paperTitle = prefs.paperTitle();
             if (paperTitle == null || paperTitle.isEmpty()) paperTitle = "未命名试卷";
             if (!paperTitle.equals(prefs.paperTitle())) prefs.setPaperTitle(paperTitle);
@@ -569,64 +571,94 @@ public class PaperActivity extends AppCompatActivity {
         }
     }
 
-    /** 一条答案：答案本体直接显示，解析默认折叠，点「展开」才看 */
+    /** 一条答案：圆形勾选框 + 答案，解析默认折叠。样式走「缩进发丝线」。 */
     private void addAnswerRow(String id, String answer, String detail) {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams boxLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        boxLp.bottomMargin = dp(12);
-        box.setLayoutParams(boxLp);
-
-        // 答案本体：短答案一行；长文本（没有 detail 的老数据）也折起来
         boolean longAnswer = answer != null && answer.length() > 80;
         String head = "第 " + id + " 题　" + (longAnswer ? answer.substring(0, 80) + "…" : answer);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowLp.topMargin = dp(12);
+        row.setLayoutParams(rowLp);
+
+        // 勾选框：有答案就是已完成（蓝底白勾）
+        View box = new View(this);
+        LinearLayout.LayoutParams boxLp = new LinearLayout.LayoutParams(dp(22), dp(22));
+        boxLp.topMargin = dp(1);
+        boxLp.setMarginEnd(dp(14));
+        box.setLayoutParams(boxLp);
+        box.setBackgroundResource(R.drawable.bg_checkbox_on);
+        row.addView(box);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setLayoutParams(new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(content);
+
         TextView answerView = new TextView(this);
         answerView.setText(head);
         answerView.setTextSize(15);
-        answerView.setTextColor(0xFF1F1F1F);
+        answerView.setTextColor(0xFF1A1A1A);
         answerView.setLineSpacing(dp(4), 1f);
         answerView.setTextIsSelectable(true);   // 长按可选中、复制
-        box.addView(answerView);
+        content.addView(answerView);
 
         String extra = detail == null ? "" : detail.trim();
         if (extra.isEmpty() && longAnswer) extra = answer;   // 老数据：全文当解析
-        if (extra.isEmpty()) {
-            answerList.addView(box);
-            return;
+
+        TextView detailView = null;
+        if (!extra.isEmpty()) {
+            TextView toggle = new TextView(this);
+            toggle.setText("展开解析");
+            toggle.setTextSize(13);
+            toggle.setTextColor(0xFF0A84FF);   // 蓝只给链接
+            LinearLayout.LayoutParams toggleLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            toggleLp.topMargin = dp(2);
+            toggle.setLayoutParams(toggleLp);
+            content.addView(toggle);
+
+            detailView = new TextView(this);
+            detailView.setText(extra);
+            detailView.setTextSize(13);
+            detailView.setTextColor(0xFF6E6E73);
+            detailView.setLineSpacing(dp(3), 1f);
+            detailView.setTextIsSelectable(true);   // 解析也能选中复制
+            detailView.setVisibility(View.GONE);
+            LinearLayout.LayoutParams detailLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            detailLp.topMargin = dp(6);
+            detailView.setLayoutParams(detailLp);
+            content.addView(detailView);
+
+            final TextView dv = detailView;
+            final boolean[] open = {false};
+            toggle.setOnClickListener(v -> {
+                open[0] = !open[0];
+                dv.setVisibility(open[0] ? View.VISIBLE : View.GONE);
+                toggle.setText(open[0] ? "收起解析" : "展开解析");
+            });
         }
 
-        TextView toggle = new TextView(this);
-        toggle.setText("展开解析");
-        toggle.setTextSize(12);
-        toggle.setTextColor(0xFF5B6B8C);
-        LinearLayout.LayoutParams toggleLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        toggleLp.topMargin = dp(4);
-        toggle.setLayoutParams(toggleLp);
-        box.addView(toggle);
+        answerList.addView(row);
 
-        TextView detailView = new TextView(this);
-        detailView.setText(extra);
-        detailView.setTextSize(13);
-        detailView.setTextColor(0xFF555555);
-        detailView.setLineSpacing(dp(3), 1f);
-        detailView.setTextIsSelectable(true);   // 解析也能选中复制
-        detailView.setVisibility(View.GONE);
-        LinearLayout.LayoutParams detailLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        detailLp.topMargin = dp(6);
-        detailView.setLayoutParams(detailLp);
-        box.addView(detailView);
+        // 缩进发丝线：从勾选框右侧起（22 + 14 = 36dp）
+        answerList.addView(hairline(36));
+    }
 
-        final boolean[] open = {false};
-        toggle.setOnClickListener(v -> {
-            open[0] = !open[0];
-            detailView.setVisibility(open[0] ? View.VISIBLE : View.GONE);
-            toggle.setText(open[0] ? "收起解析" : "展开解析");
-        });
-
-        answerList.addView(box);
+    /** 缩进发丝线：不顶到左边缘，从勾选框右侧起 */
+    private View hairline(int marginStartDp) {
+        View line = new View(this);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+        lp.topMargin = dp(12);
+        lp.setMarginStart(dp(marginStartDp));
+        line.setLayoutParams(lp);
+        line.setBackgroundColor(0xFFECECEF);
+        return line;
     }
 
     /** 转发：把当前这套卷的答案生成纯文本，走系统分享 */
@@ -671,7 +703,9 @@ public class PaperActivity extends AppCompatActivity {
                         if (updated.length() >= 16) updated = updated.substring(5, 16).replace('T', ' ');
                         String mark = id.equals(prefs.paperId()) ? " ← 当前" : "";
                         String name = item.optString("title", "");
-                        if (name == null || name.isEmpty()) name = id.replace("paper-", "");
+                        if (name == null || name.isEmpty() || name.equals("null")) {
+                            name = id.replace("paper-", "");
+                        }
                         ids.add(id);
                         labels.add(name + "　" + units + " 段 / " + answers + " 题　" + updated + mark);
                     }
@@ -725,33 +759,66 @@ public class PaperActivity extends AppCompatActivity {
         }
     }
 
+    /** 分区标题：左一条 3dp 蓝竖条 + 粗体小节名（样张里的「灯光」「道具」） */
     private void addSectionTitle(String text) {
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.HORIZONTAL);
+        wrap.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(20);
+        lp.bottomMargin = dp(2);
+        wrap.setLayoutParams(lp);
+
+        View bar = new View(this);
+        LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(dp(3), dp(13));
+        barLp.setMarginEnd(dp(8));
+        bar.setLayoutParams(barLp);
+        bar.setBackgroundResource(R.drawable.bg_dot_blue);
+        wrap.addView(bar);
+
         TextView title = new TextView(this);
         title.setText(text);
-        title.setTextSize(13);
-        title.setTextColor(0xFF6B6B6B);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = dp(16);
-        lp.bottomMargin = dp(6);
-        title.setLayoutParams(lp);
-        answerList.addView(title);
+        title.setTextSize(15);
+        title.setTextColor(0xFF1A1A1A);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        wrap.addView(title);
+
+        answerList.addView(wrap);
     }
 
+    /** 分段进度行：圆形状态点 + 文案（完成=蓝勾，其余=空心圆） */
     private TextView addRow(String left, String right) {
-        TextView row = new TextView(this);
-        String text = right == null || right.isEmpty() ? left : left + "　" + right;
-        row.setText(text);
-        row.setTextSize(14);
-        row.setTextColor(0xFF1F1F1F);
-        row.setLineSpacing(dp(4), 1f);
-        row.setTextIsSelectable(true);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.bottomMargin = dp(8);
-        row.setLayoutParams(lp);
+        rowLp.topMargin = dp(12);
+        row.setLayoutParams(rowLp);
+
+        boolean done = left != null && left.contains("已完成");
+        View mark = new View(this);
+        LinearLayout.LayoutParams markLp = new LinearLayout.LayoutParams(dp(22), dp(22));
+        markLp.topMargin = dp(1);
+        markLp.setMarginEnd(dp(14));
+        mark.setLayoutParams(markLp);
+        mark.setBackgroundResource(done ? R.drawable.bg_checkbox_on : R.drawable.bg_checkbox_off);
+        row.addView(mark);
+
+        TextView text = new TextView(this);
+        String body = right == null || right.isEmpty() ? left : left + "　" + right;
+        text.setText(body);
+        text.setTextSize(15);
+        text.setTextColor(done ? 0xFF1A1A1A : 0xFF6E6E73);
+        text.setLineSpacing(dp(4), 1f);
+        text.setTextIsSelectable(true);
+        text.setLayoutParams(new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(text);
+
         answerList.addView(row);
-        return row;
+        answerList.addView(hairline(36));
+        return text;
     }
 
     private int dp(int value) {

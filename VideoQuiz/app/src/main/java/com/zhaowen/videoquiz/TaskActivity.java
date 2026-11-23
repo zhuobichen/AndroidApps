@@ -116,39 +116,60 @@ public class TaskActivity extends AppCompatActivity {
         long size = job.optLong("size", 0);
         String created = job.optString("createdAt", "");
         String sessionTitle = job.optString("targetSessionTitle", "");
+        boolean finished = "complete".equals(status);
 
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        GradientDrawable shape = new GradientDrawable();
-        shape.setCornerRadius(dp(16));
-        shape.setColor(0xFFFFFFFF);
-        card.setBackground(shape);
+        // 整行 = 勾选框 + 内容列；靠发丝线分隔，不用卡片
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.VERTICAL);
+        outer.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        cardLp.bottomMargin = dp(10);
-        card.setLayoutParams(cardLp);
+        rowLp.topMargin = dp(14);
+        row.setLayoutParams(rowLp);
 
+        // 状态标记：完成 = 蓝底白勾；其余 = 空心圆
+        View mark = new View(this);
+        LinearLayout.LayoutParams markLp = new LinearLayout.LayoutParams(dp(22), dp(22));
+        markLp.topMargin = dp(1);
+        markLp.setMarginEnd(dp(14));
+        mark.setLayoutParams(markLp);
+        mark.setBackgroundResource(finished
+                ? com.zhaowen.videoquiz.R.drawable.bg_checkbox_on
+                : com.zhaowen.videoquiz.R.drawable.bg_checkbox_off);
+        row.addView(mark);
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setLayoutParams(new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(col);
+
+        // 主行：状态 + 短号
         TextView head = new TextView(this);
         head.setText(statusLabel(status) + "   " + id.substring(0, 8));
-        head.setTextSize(13);
-        head.setTextColor(statusColor(status));
-        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.setTextSize(15);
+        head.setTextColor(finished ? 0xFF1A1A1A : statusColor(status));
+        col.addView(head);
 
+        // 次行：时间 · 文件名 · 大小 · 会话
         TextView meta = new TextView(this);
         StringBuilder metaText = new StringBuilder();
         metaText.append(formatTime(created)).append("  ·  ").append(name).append("  ·  ")
                 .append(size / 1024 / 1024).append("MB");
         if (!sessionTitle.isEmpty()) metaText.append("  ·  ").append(sessionTitle);
         meta.setText(metaText.toString());
-        meta.setTextSize(11.5f);
-        meta.setTextColor(0xFF6B7280);
-        meta.setPadding(0, dp(4), 0, dp(8));
+        meta.setTextSize(12.5f);
+        meta.setTextColor(0xFF6E6E73);
+        meta.setPadding(0, dp(3), 0, 0);
+        col.addView(meta);
 
+        // 操作：文字型蓝链接，不抢视觉
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-
         if ("uploaded".equals(status)) {
             actions.addView(actionButton("开始处理", () -> act(id, "forward", "已派发")));
         }
@@ -165,30 +186,34 @@ public class TaskActivity extends AppCompatActivity {
             actions.addView(actionButton("打开结果", () -> openResult(id)));
             actions.addView(actionButton("追问", () -> openChat(id, sessionTitle)));
         }
+        if (actions.getChildCount() > 0) {
+            actions.setPadding(0, dp(2), 0, 0);
+            col.addView(actions);
+        }
 
-        card.addView(head);
-        card.addView(meta);
-        if (actions.getChildCount() > 0) card.addView(actions);
-        return card;
+        outer.addView(row);
+
+        // 缩进发丝线
+        View line = new View(this);
+        LinearLayout.LayoutParams lineLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1));
+        lineLp.topMargin = dp(14);
+        lineLp.setMarginStart(dp(36));
+        line.setLayoutParams(lineLp);
+        line.setBackgroundColor(0xFFECECEF);
+        outer.addView(line);
+
+        return outer;
     }
 
     private View actionButton(String label, Runnable onClick) {
-        com.google.android.material.button.MaterialButton button =
-                new com.google.android.material.button.MaterialButton(this, null,
-                        com.google.android.material.R.attr.materialButtonOutlinedStyle);
-        button.setText(label);
-        button.setTextSize(12);
-        button.setAllCaps(false);
-        button.setMinWidth(0);
-        button.setMinimumWidth(0);
-        button.setInsetTop(0);
-        button.setInsetBottom(0);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, dp(38));
-        lp.rightMargin = dp(8);
-        button.setLayoutParams(lp);
-        button.setOnClickListener(v -> onClick.run());
-        return button;
+        TextView link = new TextView(this);
+        link.setText(label);
+        link.setTextSize(13.5f);
+        link.setTextColor(0xFF0A84FF);
+        link.setPadding(0, dp(6), dp(18), dp(6));
+        link.setOnClickListener(v -> onClick.run());
+        return link;
     }
 
     private void act(String id, String action, String okText) {

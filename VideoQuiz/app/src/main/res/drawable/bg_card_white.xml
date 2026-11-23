@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 浮起任务卡的白底：纯白 + 16dp 圆角。阴影靠 android:elevation，不走 Material3 叠色。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/surface_card" />
+    <corners android:radius="16dp" />
+</shape>

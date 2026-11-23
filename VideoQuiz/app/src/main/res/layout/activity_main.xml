@@ -3,20 +3,20 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/surface_dim"
+    android:background="@color/surface"
     android:orientation="vertical">
 
-    <!-- 顶栏 -->
+    <!-- 顶栏：大标题 + 文字型入口（蓝只给链接） -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@color/surface"
-        android:gravity="center_vertical"
+        android:gravity="bottom"
         android:orientation="horizontal"
-        android:paddingStart="20dp"
-        android:paddingTop="14dp"
-        android:paddingEnd="12dp"
-        android:paddingBottom="14dp">
+        android:paddingStart="22dp"
+        android:paddingTop="18dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="12dp">
 
         <LinearLayout
             android:layout_width="0dp"
@@ -25,89 +25,50 @@
             android:orientation="vertical">
 
             <TextView
+                style="@style/Native.PageTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="卷灵"
-                android:textColor="@color/text_primary"
-                android:textSize="22sp"
-                android:textStyle="bold" />
+                android:text="卷灵" />
 
             <TextView
                 android:id="@+id/tvEndpoint"
+                style="@style/Native.Meta"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
+                android:layout_marginTop="2dp"
                 android:ellipsize="middle"
                 android:maxLines="1"
-                android:text="未配置电脑地址"
-                android:textColor="@color/text_tertiary"
-                android:textSize="11sp" />
+                android:text="未配置电脑地址" />
         </LinearLayout>
 
-        <com.google.android.material.button.MaterialButton
+        <TextView
             android:id="@+id/btnPaper"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Native.TopAction"
             android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:layout_marginEnd="6dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minWidth="0dp"
-            android:paddingStart="14dp"
-            android:paddingEnd="14dp"
-            android:text="分段"
-            android:textSize="13sp"
-            app:cornerRadius="19dp" />
+            android:layout_height="wrap_content"
+            android:text="分段" />
 
-        <com.google.android.material.button.MaterialButton
+        <TextView
             android:id="@+id/btnTasks"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Native.TopAction"
             android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:layout_marginEnd="6dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minWidth="0dp"
-            android:paddingStart="14dp"
-            android:paddingEnd="14dp"
-            android:text="任务"
-            android:textSize="13sp"
-            app:cornerRadius="19dp" />
+            android:layout_height="wrap_content"
+            android:text="任务" />
 
-        <com.google.android.material.button.MaterialButton
+        <TextView
             android:id="@+id/btnHistory"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Native.TopAction"
             android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:layout_marginEnd="6dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minWidth="0dp"
-            android:paddingStart="14dp"
-            android:paddingEnd="14dp"
-            android:text="历史"
-            android:textSize="13sp"
-            app:cornerRadius="19dp" />
+            android:layout_height="wrap_content"
+            android:text="历史" />
 
-        <com.google.android.material.button.MaterialButton
+        <TextView
             android:id="@+id/btnSettings"
-            style="@style/Widget.Material3.Button.OutlinedButton"
+            style="@style/Native.TopAction"
             android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minWidth="0dp"
-            android:paddingStart="14dp"
-            android:paddingEnd="14dp"
-            android:text="设置"
-            android:textSize="13sp"
-            app:cornerRadius="19dp" />
+            android:layout_height="wrap_content"
+            android:text="设置" />
     </LinearLayout>
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="@color/divider" />
 
     <!-- 可滚动内容 -->
     <ScrollView
@@ -120,26 +81,29 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:clipChildren="false"
+            android:clipToPadding="false"
             android:orientation="vertical">
 
-            <!-- 状态卡 -->
-            <com.google.android.material.card.MaterialCardView
+            <!-- 状态卡：浮起 -->
+            <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="14dp"
-                android:layout_marginTop="14dp"
-                android:layout_marginEnd="14dp"
-                app:cardBackgroundColor="@color/surface"
-                app:cardCornerRadius="20dp"
-                app:cardElevation="0dp"
-                app:strokeColor="@color/divider"
-                app:strokeWidth="1dp">
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="6dp"
+                android:layout_marginEnd="16dp"
+                android:background="@drawable/bg_card_white"
+                android:elevation="8dp"
+                android:outlineProvider="background">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="18dp">
+                    android:paddingStart="18dp"
+                    android:paddingTop="16dp"
+                    android:paddingEnd="18dp"
+                    android:paddingBottom="16dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -149,39 +113,36 @@
 
                         <View
                             android:id="@+id/dotPhase"
-                            android:layout_width="10dp"
-                            android:layout_height="10dp"
-                            android:layout_marginEnd="8dp"
-                            android:background="@color/brand" />
+                            android:layout_width="8dp"
+                            android:layout_height="8dp"
+                            android:layout_marginEnd="10dp"
+                            android:background="@drawable/bg_dot_blue" />
 
                         <TextView
                             android:id="@+id/tvPhase"
+                            style="@style/Native.Title"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="还没有选择视频"
-                            android:textColor="@color/text_primary"
-                            android:textSize="17sp"
-                            android:textStyle="bold" />
+                            android:text="还没有选择视频" />
                     </LinearLayout>
 
                     <TextView
                         android:id="@+id/tvVideo"
+                        style="@style/Native.Caption"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="6dp"
                         android:ellipsize="middle"
                         android:maxLines="2"
-                        android:text="选一段试卷录像，整段视频会一次性上传到电脑"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12.5sp" />
+                        android:text="选一段试卷录像，整段视频会一次性上传到电脑" />
 
                     <ProgressBar
                         android:id="@+id/progress"
                         style="?android:attr/progressBarStyleHorizontal"
                         android:layout_width="match_parent"
-                        android:layout_height="6dp"
-                        android:layout_marginTop="16dp"
+                        android:layout_height="4dp"
+                        android:layout_marginTop="14dp"
                         android:max="100"
                         android:progressBackgroundTint="@color/brand_soft"
                         android:progressTint="@color/brand"
@@ -189,107 +150,110 @@
 
                     <TextView
                         android:id="@+id/tvStatus"
+                        style="@style/Native.Meta"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="10dp"
                         android:lineSpacingExtra="2dp"
-                        android:text=""
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        android:text="" />
                 </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+            </FrameLayout>
 
-            <!-- 结果卡 -->
-            <com.google.android.material.card.MaterialCardView
+            <!-- 结果卡：浮起 -->
+            <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="14dp"
-                android:layout_marginTop="12dp"
-                android:layout_marginEnd="14dp"
-                app:cardBackgroundColor="@color/surface"
-                app:cardCornerRadius="20dp"
-                app:cardElevation="0dp"
-                app:strokeColor="@color/divider"
-                app:strokeWidth="1dp">
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="14dp"
+                android:layout_marginEnd="16dp"
+                android:background="@drawable/bg_card_white"
+                android:elevation="8dp"
+                android:outlineProvider="background">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="18dp">
+                    android:paddingStart="18dp"
+                    android:paddingTop="16dp"
+                    android:paddingEnd="18dp"
+                    android:paddingBottom="16dp">
 
-                    <TextView
+                    <!-- 分区标题：前面加一条短蓝线（样张里的分区感） -->
+                    <LinearLayout
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="结果"
-                        android:textColor="@color/text_tertiary"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <View
+                            android:layout_width="3dp"
+                            android:layout_height="12dp"
+                            android:layout_marginEnd="8dp"
+                            android:background="@drawable/bg_dot_blue" />
+
+                        <TextView
+                            style="@style/Native.SectionHead"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="结果" />
+                    </LinearLayout>
 
                     <TextView
                         android:id="@+id/tvResult"
+                        style="@style/Native.Body"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="10dp"
                         android:lineSpacingExtra="5dp"
                         android:text="电脑处理完成后，结果会显示在这里。"
-                        android:textColor="@color/text_primary"
                         android:textIsSelectable="true"
-                        android:textSize="13.5sp" />
+                        android:textSize="14sp" />
                 </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+            </FrameLayout>
 
-            <!-- 次级操作 -->
+            <!-- 次级操作：描边按钮，不抢蓝色 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="14dp"
+                android:layout_marginStart="16dp"
                 android:layout_marginTop="12dp"
-                android:layout_marginEnd="14dp"
+                android:layout_marginEnd="16dp"
                 android:orientation="horizontal">
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnSolve"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    style="@style/Native.SecondaryButton"
                     android:layout_width="0dp"
                     android:layout_height="46dp"
                     android:layout_weight="1"
                     android:enabled="false"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
                     android:text="解题"
-                    android:textSize="13sp"
-                    android:visibility="gone"
-                    app:cornerRadius="15dp" />
+                    android:textSize="14sp"
+                    android:visibility="gone" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnPdf"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    style="@style/Native.SecondaryButton"
                     android:layout_width="0dp"
                     android:layout_height="46dp"
                     android:layout_marginStart="8dp"
                     android:layout_weight="1"
                     android:enabled="false"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
                     android:text="查看结果"
-                    android:textSize="13sp"
-                    android:visibility="gone"
-                    app:cornerRadius="15dp" />
+                    android:textSize="14sp"
+                    android:visibility="gone" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnOpenChat"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    style="@style/Native.SecondaryButton"
                     android:layout_width="0dp"
                     android:layout_height="46dp"
                     android:layout_marginStart="8dp"
                     android:layout_weight="1"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
                     android:text="继续追问"
-                    android:textSize="13sp"
-                    android:visibility="gone"
-                    app:cornerRadius="15dp" />
+                    android:textSize="14sp"
+                    android:visibility="gone" />
             </LinearLayout>
         </LinearLayout>
     </ScrollView>
@@ -300,21 +264,25 @@
         android:layout_height="wrap_content"
         android:background="@color/surface"
         android:orientation="vertical"
-        android:paddingStart="14dp"
+        android:paddingStart="16dp"
         android:paddingTop="10dp"
-        android:paddingEnd="14dp"
-        android:paddingBottom="14dp">
+        android:paddingEnd="16dp"
+        android:paddingBottom="16dp">
+
+        <!-- 顶部一条发丝线，代替阴影分隔 -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginBottom="12dp"
+            android:background="@color/hairline" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnDispatch"
+            style="@style/Native.PrimaryButton"
             android:layout_width="match_parent"
             android:layout_height="50dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
             android:text="开始处理"
-            android:textSize="14.5sp"
-            android:visibility="gone"
-            app:cornerRadius="16dp" />
+            android:visibility="gone" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -323,50 +291,42 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnPick"
+                style="@style/Native.PrimaryButton"
                 android:layout_width="0dp"
                 android:layout_height="52dp"
                 android:layout_weight="1"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
                 android:maxLines="1"
                 android:paddingStart="6dp"
                 android:paddingEnd="6dp"
                 android:text="选视频"
-                android:textSize="14sp"
-                app:cornerRadius="16dp" />
+                android:textSize="15sp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnShot"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+                style="@style/Native.SecondaryButton"
                 android:layout_width="0dp"
                 android:layout_height="52dp"
                 android:layout_marginStart="8dp"
                 android:layout_weight="1"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
                 android:maxLines="1"
                 android:paddingStart="6dp"
                 android:paddingEnd="6dp"
                 android:text="拍一题"
-                android:textSize="14sp"
-                app:cornerRadius="16dp" />
+                android:textSize="15sp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnRun"
-                style="@style/Widget.Material3.Button.TonalButton"
+                style="@style/Native.SecondaryButton"
                 android:layout_width="0dp"
                 android:layout_height="52dp"
                 android:layout_marginStart="8dp"
                 android:layout_weight="1"
                 android:enabled="false"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
                 android:maxLines="1"
                 android:paddingStart="6dp"
                 android:paddingEnd="6dp"
                 android:text="上传电脑"
-                android:textSize="14sp"
-                app:cornerRadius="16dp" />
+                android:textSize="15sp" />
+        </LinearLayout>
     </LinearLayout>
-</LinearLayout>
 </LinearLayout>

@@ -1,18 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="brand">#2F6BFF</color>
-    <color name="brand_dark">#1B44A8</color>
-    <color name="brand_soft">#E8EFFF</color>
+    <!--
+      设计规格：原生精修（Things 3 式）
+      纯白 + 近黑 + 一个蓝；勾选框、缩进发丝线、浮起任务卡。
+      规则：蓝只给「勾选 / 链接 / 加号」，不做大色块按钮。
+    -->
+
+    <!-- 唯一的强调色 -->
+    <color name="brand">#0A84FF</color>
+    <color name="brand_dark">#0060C8</color>
+    <color name="brand_soft">#EAF4FF</color>
+
+    <!-- 底色：页面纯白，浮起卡也是白，靠阴影和发丝线分层 -->
     <color name="surface">#FFFFFF</color>
-    <color name="surface_dim">#F2F4F8</color>
-    <color name="text_primary">#14181F</color>
-    <color name="text_secondary">#5B6472</color>
-    <color name="text_tertiary">#8A93A3</color>
-    <color name="success">#1E9E63</color>
-    <color name="warning">#C77700</color>
-    <color name="danger">#C5372C</color>
-    <color name="divider">#E4E8F0</color>
-    <color name="onSurface">#1F1F1F</color>
-    <color name="onSurfaceVariant">#6B6B6B</color>
-    <color name="outlineVariant">#E2E6EE</color>
+    <color name="surface_dim">#FFFFFF</color>
+    <color name="surface_card">#FFFFFF</color>
+
+    <!-- 文字：近黑不用纯黑 -->
+    <color name="text_primary">#1A1A1A</color>
+    <color name="text_secondary">#6E6E73</color>
+    <color name="text_tertiary">#A0A0A6</color>
+
+    <!-- 状态色保持克制 -->
+    <color name="success">#34C759</color>
+    <color name="warning">#FF9500</color>
+    <color name="danger">#FF3B30</color>
+
+    <!-- 发丝线：比原来更淡，只起分隔作用 -->
+    <color name="divider">#ECECEF</color>
+    <color name="hairline">#ECECEF</color>
+
+    <color name="onSurface">#1A1A1A</color>
+    <color name="onSurfaceVariant">#6E6E73</color>
+    <color name="outlineVariant">#ECECEF</color>
+
+    <!-- 复选框 -->
+    <color name="checkbox_off">#D1D1D6</color>
+    <color name="checkbox_on">#0A84FF</color>
 </resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 蓝色小圆点：用于状态指示与分区前的小竖线（配 3dp 宽就是竖条） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/brand" />
+    <corners android:radius="2dp" />
+</shape>

@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      原生精修（Things 3 式）· 共享样式
+      浮起任务卡、缩进发丝线、圆形勾选框、文字层级。
+      规则：蓝只给勾选 / 链接 / 加号。
+    -->
+
+    <!-- 基类：点号命名的子样式会默认继承它，必须存在 -->
+    <style name="Native" />
+
+    <!-- 浮起任务卡：白底 + 大阴影 + 16dp 圆角，用于 MaterialCardView -->
+    <style name="Native.Card" parent="Widget.Material3.CardView.Elevated">
+        <item name="cardBackgroundColor">@color/surface_card</item>
+        <item name="cardCornerRadius">16dp</item>
+        <item name="cardElevation">6dp</item>
+        <item name="cardMaxElevation">6dp</item>
+        <item name="strokeWidth">0dp</item>
+        <item name="cardPreventCornerOverlap">true</item>
+    </style>
+
+    <!-- 缩进发丝线：从勾选框右侧起，不顶到左边缘 -->
+    <style name="Native.Hairline">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">1dp</item>
+        <item name="android:layout_marginStart">56dp</item>
+        <item name="android:background">@color/hairline</item>
+    </style>
+
+    <!-- 圆形勾选框 22dp -->
+    <style name="Native.Checkbox">
+        <item name="android:layout_width">22dp</item>
+        <item name="android:layout_height">22dp</item>
+        <item name="android:background">@drawable/bg_checkbox_off</item>
+    </style>
+
+    <!-- 文字层级 -->
+    <style name="Native.PageTitle">
+        <item name="android:textSize">26sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="Native.SectionHead">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Native.Title">
+        <item name="android:textSize">17sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="Native.Body">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:lineSpacingExtra">4dp</item>
+    </style>
+
+    <style name="Native.Caption">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <style name="Native.Meta">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/text_tertiary</item>
+    </style>
+
+    <!-- 蓝只用于链接与加号：文字型，无底色 -->
+    <style name="Native.Link">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/brand</item>
+        <item name="android:background">?android:attr/selectableItemBackgroundBorderless</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:paddingStart">6dp</item>
+        <item name="android:paddingEnd">6dp</item>
+    </style>
+
+    <!-- 顶栏小文字按钮：用链接样式，替代原来的填充色按钮 -->
+    <style name="Native.TopAction">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/brand</item>
+        <item name="android:background">?android:attr/selectableItemBackgroundBorderless</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingEnd">10dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+    </style>
+
+    <!-- 主行动按钮：深色实心，不抢蓝色（蓝留给勾选/链接/加号） -->
+    <style name="Native.PrimaryButton" parent="Widget.Material3.Button">
+        <item name="backgroundTint">@color/text_primary</item>
+        <item name="android:textColor">@color/surface</item>
+        <item name="cornerRadius">14dp</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:letterSpacing">0.01</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:minHeight">50dp</item>
+    </style>
+
+    <!-- 次行动按钮：白底 + 发丝描边 -->
+    <style name="Native.SecondaryButton" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="strokeColor">@color/hairline</item>
+        <item name="strokeWidth">1.5dp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="cornerRadius">14dp</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:minHeight">50dp</item>
+    </style>
+</resources>
