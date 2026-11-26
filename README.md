@@ -5,15 +5,18 @@
 | App | 说明 | 技术栈 | 状态 |
 |---|---|---|---|
 | [MapMate](MapMate/) | 会说话的手机地图：高德地图 + DeepSeek Agent，主打骑行导航与记录 | Java · Material3 · 高德 SDK 10.0 · DeepSeek API | 自用可用 |
-| [卷灵 / JuanLing](VideoQuiz/) | 拍一段试卷录像 → 交给自己的电脑解析 → 回传答案与 PDF（原 VideoQuiz） | Java · Material3 · 本地 DSH 桥接 · PdfRenderer | v3.0 |
+| [卷灵 / JuanLing](VideoQuiz/) | 拍试卷录像或照片 → 交给自己的电脑识别解题 → 答案直接回传手机（默认 txt） | Java · Material3 · 本地 DSH 桥接 · CUDA OCR · 判定模型 | v4.5 |
 
 ## 下载
 
 APK 在 [Releases](https://github.com/zhuobichen/AndroidApps/releases) 页面。
 
-> **卷灵只装 APK 不能用**：真正读题、解题、排版 PDF 都在你自己的电脑上跑，
-> 电脑端需要 Node.js + DSH + 一个第三方插件 + 桥接服务。
+> **卷灵只装 APK 不能用**：真正读题、解题都在你自己的电脑上跑，手机只是遥控器。
+> 电脑端需要 Node.js + DSH + supervisor 插件 + 桥接服务（含常驻 CUDA OCR）。
 > 完整部署步骤与自检脚本见 [VideoQuiz/bridge/README.md](VideoQuiz/bridge/README.md)。
+>
+> v4.5 起界面按「原生精修（Things 3 式）」重做：纯白 + 近黑 + 一个蓝、圆形勾选框、
+> 缩进发丝线、浮起任务卡。结果默认只出 `answers.txt`，PDF 改为按需。
 >
 > MapMate 则需要在 App 内填 DeepSeek Key（或自建小智服务端），以及高德 Key。
 
@@ -22,9 +25,9 @@ APK 在 [Releases](https://github.com/zhuobichen/AndroidApps/releases) 页面。
 | | MapMate | 卷灵 |
 | --- | --- | --- |
 | 算力在哪 | 手机 + 云端 API（或自建语音服务端） | **电脑本地**，手机只是遥控器 |
-| 联网要求 | 需要外网访问模型 API | 电脑与手机同一局域网即可，视频不出本地 |
-| 首次准备 | 填高德 Key + DeepSeek Key | 电脑端装 5 件套（见部署指南） |
-| 典型耗时 | 秒级对话 | 整卷解析十几分钟，可后台跑 |
+| 联网要求 | 需要外网访问模型 API | 手机与电脑同网即可；视频整段上传、不分片，不出本地 |
+| 首次准备 | 填高德 Key + DeepSeek Key | 电脑端装 5 件套（见部署指南），手机填电脑地址 + 配对令牌 |
+| 典型耗时 | 秒级对话 | 整卷十几分钟（分段模式约 5 分钟），判定模型覆盖客观题 |
 
 ## 结构
 
@@ -37,6 +40,10 @@ AndroidApps/
 ├── VideoQuiz/                # 卷灵（原 VideoQuiz）
 │   ├── app/                  # 应用模块
 │   ├── bridge/               # 电脑端桥接服务 + 部署指南 + 自检脚本
+│   │   ├── pipeline.py       # 固化读卷流水线（抽帧/去重/校正/OCR/结构化）
+│   │   ├── skills/           # 内置 videoquiz-paper 技能（派发时自动安装）
+│   │   └── tests/            # units / paper 测试
+│   ├── 局部资料/             # 本机试题与作答整理（不进版本库）
 │   ├── dist/                 # 构建产物（不进版本库）
 │   └── README.md             # 架构、流程、版本记录
 ├── emuhome/                  # 模拟器工作目录
@@ -65,8 +72,8 @@ D:\Android\MapMate\MapMate\tools\gradle-8.9\bin\gradle.bat assembleDebug
 APK 不进版本库（`.gitignore` 排除 `dist/`），走 GitHub Releases：
 
 ```bash
-gh release create v3.0 VideoQuiz/dist/juanling-v3.0-debug.apk \
-  --title "卷灵 v3.0" --notes-file notes.md
+gh release create v4.5 VideoQuiz/dist/juanling-v4.5-debug.apk \
+  --title "卷灵 v4.5" --notes-file notes.md
 ```
 
 目前是 **debug 签名**：能装、能覆盖升级，但不能上架商店。
